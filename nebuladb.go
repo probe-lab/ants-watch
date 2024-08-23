@@ -14,18 +14,24 @@ type NebulaDB struct {
 	connPool *pgxpool.Pool
 }
 
-func NewDB(connString string) *NebulaDB {
+func NewNebulaDB(connString string) *NebulaDB {
 	return &NebulaDB{
 		ConnString: connString,
 	}
 }
 
 func (db *NebulaDB) Open(ctx context.Context) error {
-	connPool, err := pgxpool.New(ctx, db.ConnString)
-	if err == nil {
-		db.connPool = connPool
+	if db.connPool != nil {
+		return nil
 	}
-	return err
+	connPool, err := pgxpool.New(ctx, db.ConnString)
+	if err != nil {
+		logger.Warn("unable to open connection to Nebula DB: ", err)
+		return err
+	}
+	logger.Debug("opened connection to Nebula DB")
+	db.connPool = connPool
+	return nil
 }
 
 func (db *NebulaDB) Close() {
@@ -43,6 +49,8 @@ func (db *NebulaDB) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
 		defer db.Close()
 	}
 
+	logger.Debug("getting last crawl from Nebula DB")
+
 	crawlIdQuery := `
 	    SELECT c.id
         FROM crawls c
@@ -55,6 +63,7 @@ func (db *NebulaDB) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
 	var crawlId uint64
 	err := db.connPool.QueryRow(ctx, crawlIdQuery, crawlIntervalAgo).Scan(&crawlId)
 	if err != nil {
+		logger.Warn("unable to get last crawl from Nebula DB: ", err)
 		return nil, err
 	}
 
@@ -70,6 +79,7 @@ func (db *NebulaDB) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
 	beforeLastCrawlStarted := crawlIntervalAgo.Add(-CRAWL_INTERVAL)
 	rows, err := db.connPool.Query(ctx, peersQuery, beforeLastCrawlStarted, crawlId)
 	if err != nil {
+		logger.Warn("unable to get peers from Nebula DB: ", err)
 		return nil, err
 	}
 
@@ -86,6 +96,8 @@ func (db *NebulaDB) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
 		}
 		peerIds = append(peerIds, peerId)
 	}
+
+	logger.Debugf("found %d peers during the last Nebula crawl", len(peerIds))
 
 	return peerIds, nil
 }

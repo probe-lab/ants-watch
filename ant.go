@@ -8,6 +8,7 @@ import (
 	kad "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 )
@@ -17,7 +18,7 @@ const (
 )
 
 type Ant struct {
-	host host.Host
+	Host host.Host
 	dht  *kad.IpfsDHT
 
 	closeChan chan struct{}
@@ -26,6 +27,9 @@ type Ant struct {
 }
 
 func SpawnAnt(ctx context.Context, privKey crypto.PrivKey) (*Ant, error) {
+
+	pid, _ := peer.IDFromPrivateKey(privKey)
+	logger.Debugf("spawning ant. kadid: %s, peerid: %s", PeeridToKadid(pid).HexString(), pid)
 	// TODO: edit libp2p host for cloud deployment
 	h, err := libp2p.New(
 		libp2p.UserAgent("celestia-celestia"),
@@ -34,6 +38,7 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey) (*Ant, error) {
 		libp2p.DisableRelay(),
 	)
 	if err != nil {
+		logger.Warn("unable to create libp2p host: ", err)
 		return nil, err
 	}
 
@@ -44,17 +49,18 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey) (*Ant, error) {
 	}
 	dht, err := kad.New(ctx, h, dhtOpts...)
 	if err != nil {
+		logger.Warn("unable to create libp2p dht: ", err)
 		return nil, err
 	}
 
 	ant := &Ant{
-		host:      h,
+		Host:      h,
 		dht:       dht,
 		closeChan: make(chan struct{}, 1),
 		KadId:     PeeridToKadid(h.ID()),
 	}
 
-	ant.run(ctx)
+	go ant.run(ctx)
 
 	return ant, nil
 }
@@ -80,5 +86,5 @@ func (a *Ant) Close() error {
 	if err != nil {
 		return err
 	}
-	return a.host.Close()
+	return a.Host.Close()
 }

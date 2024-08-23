@@ -24,8 +24,22 @@ type Queen struct {
 	ants []*Ant
 }
 
+func NewQueen(dbConnString string, keysDbPath string) *Queen {
+	nebulaDB := NewNebulaDB(dbConnString)
+	keysDB := NewKeysDB(keysDbPath)
+
+	logger.Debug("queen created")
+
+	return &Queen{
+		nebulaDB: nebulaDB,
+		keysDB:   keysDB,
+		ants:     []*Ant{},
+	}
+}
+
 func (q *Queen) Run(ctx context.Context) {
 	t := time.NewTicker(CRAWL_INTERVAL)
+	q.routine(ctx)
 
 	for {
 		select {
@@ -52,6 +66,7 @@ func (q *Queen) routine(ctx context.Context) {
 
 	// zones correspond to the prefixes of the tries that must be covered by an ant
 	zones := trieZones(networkTrie, BUCKET_SIZE)
+	logger.Debugf("%d zones must be covered by ants", len(zones))
 
 	// convert string zone to bitstr.Key
 	missingKeys := make([]bitstr.Key, len(zones))
@@ -77,6 +92,10 @@ func (q *Queen) routine(ctx context.Context) {
 			excessAntsIndices = append(excessAntsIndices, index)
 		}
 	}
+	logger.Debugf("currently have %d ants", len(q.ants))
+	logger.Debugf("need %d extra ants", len(missingKeys))
+	logger.Debugf("removing %d ants", len(excessAntsIndices))
+
 	// remove ants
 	for _, index := range excessAntsIndices {
 		q.ants[index].Close()
@@ -92,6 +111,8 @@ func (q *Queen) routine(ctx context.Context) {
 		}
 		q.ants = append(q.ants, ant)
 	}
+
+	logger.Debug("queen routine over")
 }
 
 func trieZones[K kad.Key[K], T any](t *trie.Trie[K, T], zoneSize int) []string {
