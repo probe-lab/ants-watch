@@ -2,9 +2,12 @@ package ants
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p-kad-dht/antslog"
+	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/probe-lab/go-libdht/kad"
 	"github.com/probe-lab/go-libdht/kad/key"
@@ -21,7 +24,8 @@ type Queen struct {
 	nebulaDB *NebulaDB
 	keysDB   *KeysDB
 
-	ants []*Ant
+	ants     []*Ant
+	antsLogs chan antslog.RequestLog
 }
 
 func NewQueen(dbConnString string, keysDbPath string) *Queen {
@@ -34,10 +38,12 @@ func NewQueen(dbConnString string, keysDbPath string) *Queen {
 		nebulaDB: nebulaDB,
 		keysDB:   keysDB,
 		ants:     []*Ant{},
+		antsLogs: make(chan antslog.RequestLog, 1024),
 	}
 }
 
 func (q *Queen) Run(ctx context.Context) {
+	go q.consumeAntsLogs(ctx)
 	t := time.NewTicker(CRAWL_INTERVAL)
 	q.routine(ctx)
 
@@ -46,6 +52,18 @@ func (q *Queen) Run(ctx context.Context) {
 		case <-t.C:
 			// crawl
 			q.routine(ctx)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (q *Queen) consumeAntsLogs(ctx context.Context) {
+	for {
+		select {
+		case log := <-q.antsLogs:
+			reqType := kadpb.Message_MessageType(log.Type).String()
+			fmt.Printf("%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s\n", log.Timestamp.Format(time.RFC3339), log.Self, reqType, log.Requester, log.Target.B58String())
 		case <-ctx.Done():
 			return
 		}
@@ -105,7 +123,7 @@ func (q *Queen) routine(ctx context.Context) {
 	// add missing ants
 	privKeys := q.keysDB.MatchingKeys(missingKeys)
 	for _, key := range privKeys {
-		ant, err := SpawnAnt(ctx, key)
+		ant, err := SpawnAnt(ctx, key, q.antsLogs)
 		if err != nil {
 			logger.Warn("error creating ant", err)
 		}

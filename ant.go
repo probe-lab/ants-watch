@@ -6,6 +6,7 @@ import (
 
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
+	antslog "github.com/libp2p/go-libp2p-kad-dht/antslog"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -26,7 +27,7 @@ type Ant struct {
 	KadId bit256.Key
 }
 
-func SpawnAnt(ctx context.Context, privKey crypto.PrivKey) (*Ant, error) {
+func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, logsChan chan antslog.RequestLog) (*Ant, error) {
 
 	pid, _ := peer.IDFromPrivateKey(privKey)
 	logger.Debugf("spawning ant. kadid: %s, peerid: %s", PeeridToKadid(pid).HexString(), pid)
@@ -46,6 +47,7 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey) (*Ant, error) {
 		kad.Mode(kad.ModeServer),
 		kad.BootstrapPeers(BootstrapPeers(celestiaNet)...),
 		kad.ProtocolPrefix(protocol.ID(fmt.Sprintf("/celestia/%s", celestiaNet))),
+		kad.RequestsLogChan(logsChan),
 	}
 	dht, err := kad.New(ctx, h, dhtOpts...)
 	if err != nil {
