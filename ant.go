@@ -33,7 +33,7 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, logsChan chan antslog
 	logger.Debugf("spawning ant. kadid: %s, peerid: %s", PeeridToKadid(pid).HexString(), pid)
 	// TODO: edit libp2p host for cloud deployment
 	h, err := libp2p.New(
-		libp2p.UserAgent("celestia-celestia"),
+		libp2p.UserAgent("celestiant"),
 		libp2p.Identity(privKey),
 		libp2p.NATPortMap(),
 		libp2p.DisableRelay(),

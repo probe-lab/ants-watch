@@ -3,6 +3,7 @@ package ants
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
@@ -26,6 +27,8 @@ type Queen struct {
 
 	ants     []*Ant
 	antsLogs chan antslog.RequestLog
+
+	seen map[peer.ID]struct{}
 }
 
 func NewQueen(dbConnString string, keysDbPath string) *Queen {
@@ -39,6 +42,7 @@ func NewQueen(dbConnString string, keysDbPath string) *Queen {
 		keysDB:   keysDB,
 		ants:     []*Ant{},
 		antsLogs: make(chan antslog.RequestLog, 1024),
+		seen:     make(map[peer.ID]struct{}),
 	}
 }
 
@@ -59,11 +63,30 @@ func (q *Queen) Run(ctx context.Context) {
 }
 
 func (q *Queen) consumeAntsLogs(ctx context.Context) {
+	lnCount := 0
 	for {
 		select {
 		case log := <-q.antsLogs:
-			reqType := kadpb.Message_MessageType(log.Type).String()
-			fmt.Printf("%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s\n", log.Timestamp.Format(time.RFC3339), log.Self, reqType, log.Requester, log.Target.B58String())
+			if false {
+				reqType := kadpb.Message_MessageType(log.Type).String()
+				// TODO: persistant logging
+				fmt.Printf("%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n", log.Timestamp.Format(time.RFC3339), log.Self, reqType, log.Requester, log.Target.B58String(), log.Agent, log.Maddrs)
+			} else {
+				if _, ok := q.seen[log.Requester]; !ok {
+					q.seen[log.Requester] = struct{}{}
+					if strings.Contains(log.Agent, "light") {
+						lnCount++
+					}
+					count := len(q.seen)
+					if count > 1 {
+						fmt.Printf("\033[F")
+					} else {
+						fmt.Printf("%s \tstarting sniffing\n", time.Now().Format(time.RFC3339))
+					}
+					fmt.Printf("\r%s    %s\n", log.Requester, log.Agent)
+					fmt.Printf("%s\ttotal: %d \tlight: %d\n", time.Now().Format(time.RFC3339), len(q.seen), lnCount)
+				}
+			}
 		case <-ctx.Done():
 			return
 		}
@@ -130,6 +153,7 @@ func (q *Queen) routine(ctx context.Context) {
 		q.ants = append(q.ants, ant)
 	}
 
+	logger.Debugf("ants count: %d", len(q.ants))
 	logger.Debug("queen routine over")
 }
 
