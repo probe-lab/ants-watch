@@ -3,6 +3,7 @@ package ants
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -17,9 +18,7 @@ import (
 	"github.com/probe-lab/go-libdht/kad/trie"
 )
 
-var (
-	logger = log.Logger("ants-queen")
-)
+var logger = log.Logger("ants-queen")
 
 type Queen struct {
 	nebulaDB *NebulaDB
@@ -64,6 +63,13 @@ func (q *Queen) Run(ctx context.Context) {
 
 func (q *Queen) consumeAntsLogs(ctx context.Context) {
 	lnCount := 0
+	f, err := os.OpenFile("log.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		// TODO: improve this
+		panic(err)
+	}
+	defer f.Close()
+
 	for {
 		select {
 		case log := <-q.antsLogs:
@@ -77,14 +83,15 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 					if strings.Contains(log.Agent, "light") {
 						lnCount++
 					}
-					count := len(q.seen)
-					if count > 1 {
-						fmt.Printf("\033[F")
-					} else {
-						fmt.Printf("%s \tstarting sniffing\n", time.Now().Format(time.RFC3339))
-					}
-					fmt.Printf("\r%s    %s\n", log.Requester, log.Agent)
-					fmt.Printf("%s\ttotal: %d \tlight: %d\n", time.Now().Format(time.RFC3339), len(q.seen), lnCount)
+					// count := len(q.seen)
+					// if count > 1 {
+					// 	fmt.Printf("\033[F")
+					// } else {
+					// 	fmt.Printf("%s \tstarting sniffing\n", time.Now().Format(time.RFC3339))
+					// }
+					fmt.Fprintf(f, "\r%s    %s\n", log.Requester, log.Agent)
+					// fmt.Printf("%s\ttotal: %d \tlight: %d\n", time.Now().Format(time.RFC3339), len(q.seen), lnCount)
+					logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
 				}
 			}
 		case <-ctx.Done():

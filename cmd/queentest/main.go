@@ -11,6 +11,8 @@ import (
 func main() {
 	log.SetLogLevel("ants-queen", "debug") // debug
 	log.SetLogLevel("dht", "error")        // warn
+	log.SetLogLevel("basichost", "info")
+	// log.SetLogLevel("nat", "debug")
 
 	postgresStr := flag.String("postgres", "", "Postgres connection string, postgres://user:password@host:port/dbname")
 	flag.Parse()

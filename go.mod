@@ -1,6 +1,9 @@
 module github.com/probe-lab/ants-watch
 
-replace github.com/libp2p/go-libp2p-kad-dht => ./go-libp2p-kad-dht
+replace (
+	github.com/libp2p/go-libp2p-kad-dht => ./go-libp2p-kad-dht
+	github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
+)
 
 go 1.23
 

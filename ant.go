@@ -11,6 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 )
 
@@ -22,22 +23,34 @@ type Ant struct {
 	Host host.Host
 	dht  *kad.IpfsDHT
 
-	closeChan chan struct{}
-
 	KadId bit256.Key
 }
 
 func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, logsChan chan antslog.RequestLog) (*Ant, error) {
-
 	pid, _ := peer.IDFromPrivateKey(privKey)
 	logger.Debugf("spawning ant. kadid: %s, peerid: %s", PeeridToKadid(pid).HexString(), pid)
-	// TODO: edit libp2p host for cloud deployment
-	h, err := libp2p.New(
+
+	// taken from github.com/celestiaorg/celestia-node/nodebuilder/p2p/config.go
+	// ports are assigned automatically
+	listenAddrs := []string{
+		"/ip4/0.0.0.0/udp/0/quic-v1/webtransport",
+		"/ip6/::/udp/0/quic-v1/webtransport",
+		"/ip4/0.0.0.0/udp/0/quic-v1",
+		"/ip6/::/udp/0/quic-v1",
+		"/ip4/0.0.0.0/tcp/0",
+		"/ip6/::/tcp/0",
+	}
+
+	opts := []libp2p.Option{
 		libp2p.UserAgent("celestiant"),
 		libp2p.Identity(privKey),
-		libp2p.NATPortMap(),
+		libp2p.NATPortMap(), // enable uPnP
 		libp2p.DisableRelay(),
-	)
+
+		libp2p.ListenAddrStrings(listenAddrs...),
+	}
+
+	h, err := libp2p.New(opts...)
 	if err != nil {
 		logger.Warn("unable to create libp2p host: ", err)
 		return nil, err
@@ -56,34 +69,17 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, logsChan chan antslog
 	}
 
 	ant := &Ant{
-		Host:      h,
-		dht:       dht,
-		closeChan: make(chan struct{}, 1),
-		KadId:     PeeridToKadid(h.ID()),
+		Host:  h,
+		dht:   dht,
+		KadId: PeeridToKadid(h.ID()),
 	}
 
-	go ant.run(ctx)
+	go dht.Bootstrap(ctx)
 
 	return ant, nil
 }
 
-func (a *Ant) run(ctx context.Context) {
-	a.dht.Bootstrap(ctx)
-
-	// TODO: log events
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-a.closeChan:
-			return
-		}
-	}
-}
-
-// TODO: double check if this is the correct way to close the ant
 func (a *Ant) Close() error {
-	a.closeChan <- struct{}{}
 	err := a.dht.Close()
 	if err != nil {
 		return err
