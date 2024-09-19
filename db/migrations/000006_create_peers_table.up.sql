@@ -3,7 +3,7 @@ BEGIN;
 -- The `peers` table keeps track of all peers ever found in the DHT
 CREATE TABLE peers
 (
-    -- The peer ID in the form of Qm... or 12D3...
+    -- The peer ID as a database-friendly integer
     id               INT GENERATED ALWAYS AS IDENTITY,
     -- The current agent version of the peer (updated if changed).
     agent_version_id INT,
