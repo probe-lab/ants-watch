@@ -28,20 +28,56 @@ type Queen struct {
 	antsLogs chan antslog.RequestLog
 
 	seen map[peer.ID]struct{}
+
+	upnp bool
+	// portsOccupancy is a slice of bools that represent the occupancy of the ports
+	// false corresponds to an available port, true to an occupied port
+	// the first item of the slice corresponds to the firstPort
+	portsOccupancy []bool
+	firstPort      uint16
 }
 
-func NewQueen(dbConnString string, keysDbPath string) *Queen {
+func NewQueen(dbConnString string, keysDbPath string, nPorts, firstPort uint16) *Queen {
 	nebulaDB := NewNebulaDB(dbConnString)
 	keysDB := NewKeysDB(keysDbPath)
 
-	logger.Debug("queen created")
-
-	return &Queen{
+	queen := &Queen{
 		nebulaDB: nebulaDB,
 		keysDB:   keysDB,
 		ants:     []*Ant{},
 		antsLogs: make(chan antslog.RequestLog, 1024),
 		seen:     make(map[peer.ID]struct{}),
+	}
+
+	if nPorts == 0 {
+		queen.upnp = true
+	} else {
+		queen.upnp = false
+		queen.firstPort = firstPort
+		queen.portsOccupancy = make([]bool, nPorts)
+	}
+
+	logger.Debug("queen created")
+
+	return queen
+}
+
+func (q *Queen) takeAvailablePort() (uint16, error) {
+	if q.upnp {
+		return 0, nil
+	}
+	for i, occupied := range q.portsOccupancy {
+		if !occupied {
+			q.portsOccupancy[i] = true
+			return q.firstPort + uint16(i), nil
+		}
+	}
+	return 0, fmt.Errorf("no available port")
+}
+
+func (q *Queen) freePort(port uint16) {
+	if !q.upnp {
+		q.portsOccupancy[port-q.firstPort] = false
 	}
 }
 
@@ -146,14 +182,21 @@ func (q *Queen) routine(ctx context.Context) {
 
 	// remove ants
 	for _, index := range excessAntsIndices {
+		port := q.ants[index].port
 		q.ants[index].Close()
 		q.ants = append(q.ants[:index], q.ants[index+1:]...)
+		q.freePort(port)
 	}
 
 	// add missing ants
 	privKeys := q.keysDB.MatchingKeys(missingKeys)
 	for _, key := range privKeys {
-		ant, err := SpawnAnt(ctx, key, q.antsLogs)
+		port, err := q.takeAvailablePort()
+		if err != nil {
+			logger.Error("trying to spwan new ant: ")
+			continue
+		}
+		ant, err := SpawnAnt(ctx, key, port, q.antsLogs)
 		if err != nil {
 			logger.Warn("error creating ant", err)
 		}
