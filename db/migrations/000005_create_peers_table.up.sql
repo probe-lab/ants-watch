@@ -17,6 +17,9 @@ CREATE TABLE peers
     -- when this peer was seen the first time.
     created_at       TIMESTAMPTZ NOT NULL,
 
+    -- When was the peer seen for the last time
+    last_seen_at       TIMESTAMPTZ NOT NULL CHECK ( last_seen_at >= updated_at ),
+
     CONSTRAINT fk_peers_agent_version_id FOREIGN KEY (agent_version_id) REFERENCES agent_versions (id) ON DELETE SET NULL,
 
     -- There should only ever be distinct peer multi hash here
