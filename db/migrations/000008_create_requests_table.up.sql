@@ -23,7 +23,7 @@ CREATE TABLE requests
     request_type    message_type NOT NULL,
     -- Peer ID of the ant doing the request,
     ant_id         INT NOT NULL,
-    -- The peer reltaed to this request
+    -- The peer related to this request
     peer_id         INT NOT NULL,
     -- The key ID of this request (?)
     key_id          INT NOT NULL,
