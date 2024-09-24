@@ -24,30 +24,36 @@ type Ant struct {
 	dht  *kad.IpfsDHT
 
 	KadId bit256.Key
+	port  uint16
 }
 
-func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, logsChan chan antslog.RequestLog) (*Ant, error) {
+func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, port uint16, logsChan chan antslog.RequestLog) (*Ant, error) {
 	pid, _ := peer.IDFromPrivateKey(privKey)
 	logger.Debugf("spawning ant. kadid: %s, peerid: %s", PeeridToKadid(pid).HexString(), pid)
+
+	portStr := fmt.Sprint(port)
 
 	// taken from github.com/celestiaorg/celestia-node/nodebuilder/p2p/config.go
 	// ports are assigned automatically
 	listenAddrs := []string{
-		"/ip4/0.0.0.0/udp/0/quic-v1/webtransport",
-		"/ip6/::/udp/0/quic-v1/webtransport",
-		"/ip4/0.0.0.0/udp/0/quic-v1",
-		"/ip6/::/udp/0/quic-v1",
-		"/ip4/0.0.0.0/tcp/0",
-		"/ip6/::/tcp/0",
+		"/ip4/0.0.0.0/udp/" + portStr + "/quic-v1/webtransport",
+		"/ip6/::/udp/" + portStr + "/quic-v1/webtransport",
+		"/ip4/0.0.0.0/udp/" + portStr + "/quic-v1",
+		"/ip6/::/udp/" + portStr + "/quic-v1",
+		"/ip4/0.0.0.0/tcp/" + portStr,
+		"/ip6/::/tcp/" + portStr,
 	}
 
 	opts := []libp2p.Option{
 		libp2p.UserAgent("celestiant"),
 		libp2p.Identity(privKey),
-		libp2p.NATPortMap(), // enable uPnP
 		libp2p.DisableRelay(),
 
 		libp2p.ListenAddrStrings(listenAddrs...),
+	}
+
+	if port == 0 {
+		opts = append(opts, libp2p.NATPortMap()) // enable NAT port mapping if no port is specified
 	}
 
 	h, err := libp2p.New(opts...)
@@ -72,6 +78,7 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, logsChan chan antslog
 		Host:  h,
 		dht:   dht,
 		KadId: PeeridToKadid(h.ID()),
+		port:  port,
 	}
 
 	go dht.Bootstrap(ctx)
