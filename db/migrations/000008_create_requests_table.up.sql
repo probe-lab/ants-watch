@@ -33,9 +33,8 @@ CREATE TABLE requests
     CONSTRAINT fk_requests_ant_id FOREIGN KEY (ant_id) REFERENCES keys (id) ON DELETE SET NULL,
     CONSTRAINT fk_requests_peer_id FOREIGN KEY (peer_id) REFERENCES peers (id) ON DELETE SET NULL,
     CONSTRAINT fk_requests_key_id FOREIGN KEY (key_id) REFERENCES keys (id) ON DELETE SET NULL,
-    CONSTRAINT fk_requests_maddrs_set_id FOREIGN KEY (maddrs_set_id) REFERENCES multi_address_sets (id) ON DELETE SET NULL,
 
-    PRIMARY KEY (id)
+    PRIMARY KEY (id, timestamp)
 ) PARTITION BY RANGE (timestamp);
 
 CREATE INDEX idx_requests_timestamp ON requests (timestamp);
