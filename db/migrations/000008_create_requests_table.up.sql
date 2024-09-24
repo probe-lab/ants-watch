@@ -21,18 +21,23 @@ CREATE TABLE requests
     timestamp       TIMESTAMPTZ NOT NULL,
     -- The message type of this request
     request_type    message_type NOT NULL,
+    -- Peer ID of the ant doing the request,
+    ant_id         INT NOT NULL,
     -- The peer reltaed to this request
     peer_id         INT NOT NULL,
     -- The key ID of this request (?)
     key_id          INT NOT NULL,
-    -- The ID of the set of multi addresses
-    maddrs_set_id   INT NOT NULL,
+    -- An array of all multi address IDs of the remote peer.
+    multi_address_ids INT[],
 
+    CONSTRAINT fk_requests_ant_id FOREIGN KEY (ant_id) REFERENCES keys (id) ON DELETE SET NULL,
     CONSTRAINT fk_requests_peer_id FOREIGN KEY (peer_id) REFERENCES peers (id) ON DELETE SET NULL,
     CONSTRAINT fk_requests_key_id FOREIGN KEY (key_id) REFERENCES keys (id) ON DELETE SET NULL,
     CONSTRAINT fk_requests_maddrs_set_id FOREIGN KEY (maddrs_set_id) REFERENCES multi_address_sets (id) ON DELETE SET NULL,
 
     PRIMARY KEY (id)
-);
+) PARTITION BY RANGE (timestamp);
+
+CREATE INDEX idx_requests_timestamp ON requests (timestamp);
 
 COMMIT;
