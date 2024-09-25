@@ -1,5 +1,6 @@
 BEGIN;
 
 DROP TABLE IF EXISTS peers;
+DROP TABLE IF EXISTS protocols_sets;
 
 COMMIT;

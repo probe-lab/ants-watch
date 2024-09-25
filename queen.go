@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/antslog"
 	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/go-libdht/kad"
 	"github.com/probe-lab/go-libdht/kad/key"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
@@ -35,11 +37,25 @@ type Queen struct {
 	// the first item of the slice corresponds to the firstPort
 	portsOccupancy []bool
 	firstPort      uint16
+
+	dbc *db.DBClient
 }
 
-func NewQueen(dbConnString string, keysDbPath string, nPorts, firstPort uint16) *Queen {
+func NewQueen(ctx context.Context, dbConnString string, keysDbPath string) *Queen {
 	nebulaDB := NewNebulaDB(dbConnString)
 	keysDB := NewKeysDB(keysDbPath)
+
+	dbPort, err := strconv.Atoi(os.Getenv("DB_PORT"))
+	if err != nil {
+		fmt.Errorf("Port must be an integer", err)
+	}
+	dbc, err := db.InitDBClient(ctx, &db.DatabaseConfig{
+		Host:     os.Getenv("DB_HOST"),
+		Port:     dbPort,
+		Name:     os.Getenv("DB_DATABASE"),
+		User:     os.Getenv("DB_USER"),
+		Password: os.Getenv("DB_PASSWORD"),
+	})
 
 	queen := &Queen{
 		nebulaDB: nebulaDB,
@@ -47,6 +63,7 @@ func NewQueen(dbConnString string, keysDbPath string, nPorts, firstPort uint16) 
 		ants:     []*Ant{},
 		antsLogs: make(chan antslog.RequestLog, 1024),
 		seen:     make(map[peer.ID]struct{}),
+		dbc:      dbc,
 	}
 
 	if nPorts == 0 {
@@ -112,7 +129,26 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			if false {
 				reqType := kadpb.Message_MessageType(log.Type).String()
 				// TODO: persistant logging
-				fmt.Printf("%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n", log.Timestamp.Format(time.RFC3339), log.Self, reqType, log.Requester, log.Target.B58String(), log.Agent, log.Maddrs)
+				fmt.Printf(
+					"%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n",
+					log.Timestamp.Format(time.RFC3339),
+					log.Self,
+					reqType,
+					log.Requester,
+					log.Target.B58String(),
+					log.Agent,
+					log.Maddrs,
+				)
+				q.dbc.PersistRequest(
+					ctx,
+					log.Timestamp,
+					reqType,
+					log.Self,            // ant ID
+					peer.ID(log.Target), // peer ID
+					"",                  // key ID
+					log.Maddrs,
+					log.Agent,
+					nil)
 			} else {
 				if _, ok := q.seen[log.Requester]; !ok {
 					q.seen[log.Requester] = struct{}{}

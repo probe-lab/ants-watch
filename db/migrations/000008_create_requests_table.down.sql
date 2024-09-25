@@ -1,6 +1,6 @@
 BEGIN;
 
 DROP TABLE IF EXISTS requests;
-DROP TYPE message_type;
+DROP TYPE IF EXISTS message_type;
 
 COMMIT;
