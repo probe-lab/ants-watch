@@ -63,7 +63,7 @@ var HealthStatus = atomic.NewBool(false)
 // metrics using prometheus. To serve the prometheus endpoint call
 // [ListenAndServe] down below.
 func NewMeterProvider() (metric.MeterProvider, error) {
-	exporter, err := prometheus.New(prometheus.WithNamespace("nebula"))
+	exporter, err := prometheus.New(prometheus.WithNamespace("ants-watch"))
 	if err != nil {
 		return nil, fmt.Errorf("new prometheus exporter: %w", err)
 	}

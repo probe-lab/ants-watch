@@ -12,12 +12,14 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/antslog"
 	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/go-libdht/kad"
 	"github.com/probe-lab/go-libdht/kad/key"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 	"github.com/probe-lab/go-libdht/kad/trie"
+
+	"github.com/probe-lab/ants-watch/db"
+	"github.com/probe-lab/ants-watch/metrics"
 )
 
 var logger = log.Logger("ants-queen")
@@ -41,7 +43,7 @@ type Queen struct {
 	dbc *db.DBClient
 }
 
-func NewQueen(ctx context.Context, dbConnString string, keysDbPath string) *Queen {
+func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16) *Queen {
 	nebulaDB := NewNebulaDB(dbConnString)
 	keysDB := NewKeysDB(keysDbPath)
 
@@ -49,12 +51,18 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string) *Quee
 	if err != nil {
 		fmt.Errorf("Port must be an integer", err)
 	}
+
+	mP, _ := metrics.NewMeterProvider()
+	tP, _ := metrics.NewTracerProvider(ctx, "", 0)
+
 	dbc, err := db.InitDBClient(ctx, &db.DatabaseConfig{
-		Host:     os.Getenv("DB_HOST"),
-		Port:     dbPort,
-		Name:     os.Getenv("DB_DATABASE"),
-		User:     os.Getenv("DB_USER"),
-		Password: os.Getenv("DB_PASSWORD"),
+		Host:           os.Getenv("DB_HOST"),
+		Port:           dbPort,
+		Name:           os.Getenv("DB_DATABASE"),
+		User:           os.Getenv("DB_USER"),
+		Password:       os.Getenv("DB_PASSWORD"),
+		MeterProvider:  mP,
+		TracerProvider: tP,
 	})
 
 	queen := &Queen{

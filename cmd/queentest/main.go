@@ -23,9 +23,9 @@ func main() {
 	ctx := context.Background()
 	var queen *ants.Queen
 	if *upnp {
-		queen = ants.NewQueen(*postgresStr, "keys.db", 0, 0)
+		queen = ants.NewQueen(ctx, *postgresStr, "keys.db", 0, 0)
 	} else {
-		queen = ants.NewQueen(*postgresStr, "keys.db", uint16(*nPorts), uint16(*firstPort))
+		queen = ants.NewQueen(ctx, *postgresStr, "keys.db", uint16(*nPorts), uint16(*firstPort))
 	}
 
 	go queen.Run(ctx)
