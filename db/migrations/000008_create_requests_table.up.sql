@@ -30,7 +30,7 @@ CREATE TABLE requests
     -- An array of all multi address IDs of the remote peer.
     multi_address_ids INT[],
 
-    CONSTRAINT fk_requests_ant_id FOREIGN KEY (ant_id) REFERENCES keys (id) ON DELETE SET NULL,
+    CONSTRAINT fk_requests_ant_id FOREIGN KEY (ant_id) REFERENCES peers (id) ON DELETE SET NULL,
     CONSTRAINT fk_requests_peer_id FOREIGN KEY (peer_id) REFERENCES peers (id) ON DELETE SET NULL,
     CONSTRAINT fk_requests_key_id FOREIGN KEY (key_id) REFERENCES keys (id) ON DELETE SET NULL,
 
