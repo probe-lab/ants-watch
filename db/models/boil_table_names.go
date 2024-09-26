@@ -10,6 +10,7 @@ var TableNames = struct {
 	PeerLogs             string
 	Peers                string
 	PeersXMultiAddresses string
+	Protocols            string
 	ProtocolsSets        string
 	Requests             string
 }{
@@ -19,6 +20,7 @@ var TableNames = struct {
 	PeerLogs:             "peer_logs",
 	Peers:                "peers",
 	PeersXMultiAddresses: "peers_x_multi_addresses",
+	Protocols:            "protocols",
 	ProtocolsSets:        "protocols_sets",
 	Requests:             "requests",
 }

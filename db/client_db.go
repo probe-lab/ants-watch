@@ -140,6 +140,33 @@ func InitDBClient(ctx context.Context, cfg *DatabaseConfig) (*DBClient, error) {
 	client := &DBClient{ctx: ctx, cfg: *cfg, dbh: dbh, telemetry: telemetry}
 	client.applyMigrations(cfg, dbh)
 
+	client.agentVersions, err = lru.New(cfg.AgentVersionsCacheSize)
+	if err != nil {
+		return nil, fmt.Errorf("new agent versions lru cache: %w", err)
+	}
+
+	client.protocols, err = lru.New(cfg.ProtocolsCacheSize)
+	if err != nil {
+		return nil, fmt.Errorf("new protocol lru cache: %w", err)
+	}
+
+	client.protocolsSets, err = lru.New(cfg.ProtocolsSetCacheSize)
+	if err != nil {
+		return nil, fmt.Errorf("new protocols set lru cache: %w", err)
+	}
+
+	if err = client.fillAgentVersionsCache(ctx); err != nil {
+		return nil, fmt.Errorf("fill agent versions cache: %w", err)
+	}
+
+	if err = client.fillProtocolsCache(ctx); err != nil {
+		return nil, fmt.Errorf("fill protocols cache: %w", err)
+	}
+
+	if err = client.fillProtocolsSetCache(ctx); err != nil {
+		return nil, fmt.Errorf("fill protocols set cache: %w", err)
+	}
+
 	client.ensurePartitions(ctx, time.Now())
 	client.ensurePartitions(ctx, time.Now().Add(24*time.Hour))
 
@@ -519,6 +546,44 @@ func (c *DBClient) fillAgentVersionsCache(ctx context.Context) error {
 
 	for _, av := range avs {
 		c.agentVersions.Add(av.AgentVersion, &av.ID)
+	}
+
+	return nil
+}
+
+// fillProtocolsSetCache fetches all rows until protocolSet cache size from the protocolsSets table and
+// initializes the DB clients protocolsSets cache.
+func (c *DBClient) fillProtocolsSetCache(ctx context.Context) error {
+	if c.cfg.ProtocolsSetCacheSize == 0 {
+		return nil
+	}
+
+	protSets, err := models.ProtocolsSets(qm.Limit(c.cfg.ProtocolsSetCacheSize)).All(ctx, c.dbh)
+	if err != nil {
+		return err
+	}
+
+	for _, ps := range protSets {
+		c.protocolsSets.Add(string(ps.Hash), &ps.ID)
+	}
+
+	return nil
+}
+
+// fillProtocolsCache fetches all rows until protocol cache size from the protocols table and
+// initializes the DB clients protocols cache.
+func (c *DBClient) fillProtocolsCache(ctx context.Context) error {
+	if c.cfg.ProtocolsCacheSize == 0 {
+		return nil
+	}
+
+	prots, err := models.Protocols(qm.Limit(c.cfg.ProtocolsCacheSize)).All(ctx, c.dbh)
+	if err != nil {
+		return err
+	}
+
+	for _, p := range prots {
+		c.protocols.Add(p.Protocol, &p.ID)
 	}
 
 	return nil

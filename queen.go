@@ -56,13 +56,15 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 	tP, _ := metrics.NewTracerProvider(ctx, "", 0)
 
 	dbc, err := db.InitDBClient(ctx, &db.DatabaseConfig{
-		Host:           os.Getenv("DB_HOST"),
-		Port:           dbPort,
-		Name:           os.Getenv("DB_DATABASE"),
-		User:           os.Getenv("DB_USER"),
-		Password:       os.Getenv("DB_PASSWORD"),
-		MeterProvider:  mP,
-		TracerProvider: tP,
+		Host:                   os.Getenv("DB_HOST"),
+		Port:                   dbPort,
+		Name:                   os.Getenv("DB_DATABASE"),
+		User:                   os.Getenv("DB_USER"),
+		Password:               os.Getenv("DB_PASSWORD"),
+		MeterProvider:          mP,
+		TracerProvider:         tP,
+		ProtocolsSetCacheSize:  200,
+		AgentVersionsCacheSize: 200,
 	})
 
 	queen := &Queen{
