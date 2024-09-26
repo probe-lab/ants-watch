@@ -134,46 +134,46 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 	for {
 		select {
 		case log := <-q.antsLogs:
-			if false {
-				reqType := kadpb.Message_MessageType(log.Type).String()
-				// TODO: persistant logging
-				fmt.Printf(
-					"%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n",
-					log.Timestamp.Format(time.RFC3339),
-					log.Self,
-					reqType,
-					log.Requester,
-					log.Target.B58String(),
-					log.Agent,
-					log.Maddrs,
-				)
-				q.dbc.PersistRequest(
-					ctx,
-					log.Timestamp,
-					reqType,
-					log.Self,               // ant ID
-					log.Requester,          // peer ID
-					log.Target.B58String(), // key ID
-					log.Maddrs,
-					log.Agent,
-					nil)
-			} else {
-				if _, ok := q.seen[log.Requester]; !ok {
-					q.seen[log.Requester] = struct{}{}
-					if strings.Contains(log.Agent, "light") {
-						lnCount++
-					}
-					// count := len(q.seen)
-					// if count > 1 {
-					// 	fmt.Printf("\033[F")
-					// } else {
-					// 	fmt.Printf("%s \tstarting sniffing\n", time.Now().Format(time.RFC3339))
-					// }
-					fmt.Fprintf(f, "\r%s    %s\n", log.Requester, log.Agent)
-					// fmt.Printf("%s\ttotal: %d \tlight: %d\n", time.Now().Format(time.RFC3339), len(q.seen), lnCount)
-					logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
+			// if false {
+			reqType := kadpb.Message_MessageType(log.Type).String()
+			// TODO: persistant logging
+			fmt.Printf(
+				"%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n",
+				log.Timestamp.Format(time.RFC3339),
+				log.Self,
+				reqType,
+				log.Requester,
+				log.Target.B58String(),
+				log.Agent,
+				log.Maddrs,
+			)
+			q.dbc.PersistRequest(
+				ctx,
+				log.Timestamp,
+				reqType,
+				log.Self,               // ant ID
+				log.Requester,          // peer ID
+				log.Target.B58String(), // key ID
+				log.Maddrs,
+				log.Agent,
+				nil)
+			// } else {
+			if _, ok := q.seen[log.Requester]; !ok {
+				q.seen[log.Requester] = struct{}{}
+				if strings.Contains(log.Agent, "light") {
+					lnCount++
 				}
+				// count := len(q.seen)
+				// if count > 1 {
+				// 	fmt.Printf("\033[F")
+				// } else {
+				// 	fmt.Printf("%s \tstarting sniffing\n", time.Now().Format(time.RFC3339))
+				// }
+				fmt.Fprintf(f, "\r%s    %s\n", log.Requester, log.Agent)
+				// fmt.Printf("%s\ttotal: %d \tlight: %d\n", time.Now().Format(time.RFC3339), len(q.seen), lnCount)
+				logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
 			}
+			// }
 		case <-ctx.Done():
 			return
 		}
