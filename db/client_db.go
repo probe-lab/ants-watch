@@ -24,6 +24,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
+	mh "github.com/multiformats/go-multihash"
 	log "github.com/sirupsen/logrus"
 	"github.com/uptrace/opentelemetry-go-extra/otelsql"
 	"github.com/volatiletech/null/v8"
@@ -244,6 +245,36 @@ func (c *DBClient) insertRequest(
 ) (*InsertRequestResult, error) {
 	maddrStrs := MaddrsToAddrs(maddrs)
 	start := time.Now()
+
+	// keyID is a mh.Multihash that may be a peer.ID and should be logged as a peer.ID (in keys table)
+	if decoded, err := mh.Decode([]byte(keyID)); err == nil && decoded.Name == "identity" {
+		row, err := queries.Raw("SELECT insert_key($1, NULL)",
+			decoded,
+		).QueryContext(ctx, c.dbh)
+		if err != nil {
+			return nil, err
+		}
+
+		defer func() {
+			if err := row.Close(); err != nil {
+				log.WithError(err).Warnln("Could not close rows")
+			}
+		}()
+	} else {
+		row, err := queries.Raw("SELECT insert_key(NULL, $1)",
+			decoded,
+		).QueryContext(ctx, c.dbh)
+		if err != nil {
+			return nil, err
+		}
+
+		defer func() {
+			if err := row.Close(); err != nil {
+				log.WithError(err).Warnln("Could not close rows")
+			}
+		}()
+	}
+
 	rows, err := queries.Raw("SELECT insert_request($1, $2, $3, $4, $5, $6)",
 		timestamp,
 		requestType,

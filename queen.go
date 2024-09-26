@@ -151,9 +151,9 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 					ctx,
 					log.Timestamp,
 					reqType,
-					log.Self,            // ant ID
-					peer.ID(log.Target), // peer ID
-					"",                  // key ID
+					log.Self,               // ant ID
+					log.Requester,          // peer ID
+					log.Target.B58String(), // key ID
 					log.Maddrs,
 					log.Agent,
 					nil)
