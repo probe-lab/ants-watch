@@ -1,3 +1,6 @@
+// mostly copy-pastad from https://github.com/dennis-tra/nebula/blob/main/db/client_db.go
+// except the `insertRequest` function
+
 package db
 
 import (
@@ -21,10 +24,11 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	lru "github.com/hashicorp/golang-lru"
+	glog "github.com/ipfs/go-log/v2"
 	_ "github.com/lib/pq"
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
-	mh "github.com/multiformats/go-multihash"
+	// mh "github.com/multiformats/go-multihash"
 	log "github.com/sirupsen/logrus"
 	"github.com/uptrace/opentelemetry-go-extra/otelsql"
 	"github.com/volatiletech/null/v8"
@@ -44,6 +48,8 @@ import (
 //go:embed migrations
 var migrations embed.FS
 
+var logger = glog.Logger("client-db")
+
 var (
 	ErrEmptyAgentVersion = fmt.Errorf("empty agent version")
 	ErrEmptyProtocol     = fmt.Errorf("empty protocol")
@@ -56,7 +62,7 @@ type DatabaseConfig struct {
 	Name         string // Database name
 	User         string
 	Password     string
-	SSLMode      string
+	SSLMode      string //one of "require" or "disable"
 	MaxIdleConns int
 
 	// The cache size to hold agent versions in memory to skip database queries.
@@ -89,7 +95,7 @@ type DBClient struct {
 	cfg DatabaseConfig
 
 	// Database handler
-	dbh *sql.DB
+	DBH *sql.DB
 
 	// protocols cache
 	agentVersions *lru.Cache
@@ -137,7 +143,7 @@ func InitDBClient(ctx context.Context, cfg *DatabaseConfig) (*DBClient, error) {
 		return nil, fmt.Errorf("new telemetry: %w", err)
 	}
 
-	client := &DBClient{ctx: ctx, cfg: *cfg, dbh: dbh, telemetry: telemetry}
+	client := &DBClient{ctx: ctx, cfg: *cfg, DBH: dbh, telemetry: telemetry}
 	client.applyMigrations(cfg, dbh)
 
 	client.agentVersions, err = lru.New(cfg.AgentVersionsCacheSize)
@@ -184,12 +190,12 @@ func (c *DBClient) ensurePartitions(ctx context.Context, baseDate time.Time) {
 	upperBound := lowerBound.AddDate(0, 1, 0)
 
 	query := partitionQuery(models.TableNames.PeerLogs, lowerBound, upperBound)
-	if _, err := c.dbh.ExecContext(ctx, query); err != nil {
+	if _, err := c.DBH.ExecContext(ctx, query); err != nil {
 		log.WithError(err).WithField("query", query).Warnln("could not create peer_logs partition")
 	}
 
 	query = partitionQuery(models.TableNames.Requests, lowerBound, upperBound)
-	if _, err := c.dbh.ExecContext(ctx, query); err != nil {
+	if _, err := c.DBH.ExecContext(ctx, query); err != nil {
 		log.WithError(err).WithField("query", query).Warnln("could not create requests partition")
 	}
 }
@@ -273,13 +279,62 @@ func (c *DBClient) insertRequest(
 	maddrStrs := MaddrsToAddrs(maddrs)
 	start := time.Now()
 
-	// keyID is a mh.Multihash that may be a peer.ID and should be logged as a peer.ID (in keys table)
-	if decoded, err := mh.Decode([]byte(keyID)); err == nil && decoded.Name == "identity" {
-		row, err := queries.Raw("SELECT insert_key($1, NULL)",
-			decoded,
-		).QueryContext(ctx, c.dbh)
+	// we want to upsert peers before anything else
+	// since it could be an ant or a key
+	peer, err := c.UpsertPeer(
+		peerID.String(),
+		agentVersionsID,
+		protocolsSetID,
+		timestamp,
+	)
+	if err != nil {
+		log.WithError(err).Printf("Could not upsert: < %s >\n", peerID.String())
+	}
+
+	// insert ant to peers table if cannot be found
+	antModel, err := models.Peers(qm.Where("multi_hash=?", antID.String())).One(ctx, c.DBH)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+
+	var ant int
+	if antModel == nil {
+		ant, _ = c.UpsertPeer(
+			antID.String(),
+			agentVersionsID,
+			protocolsSetID,
+			timestamp,
+		)
+	} else {
+		ant = antModel.ID
+	}
+
+	// taking care of keys last since it could be a peer upserted
+	// from looking for an ant or a peer above
+	var key int
+	keyModel, _ := models.Keys(qm.Where("multi_hash=?", keyID)).One(ctx, c.DBH)
+	if keyModel == nil {
+		var row *sql.Rows
+		var sqlErr error
+
+		// Decode the keyID to check if it's a peer ID ("identity" multihash)
+		// if decoded, err := mh.Decode([]byte(keyID)); err == nil && decoded.Name == "identity" {
+		peerModel, _ := models.Peers(qm.Where("multi_hash=?", keyID)).One(ctx, c.DBH)
+		if peerModel != nil {
+			// If it's an identity peer, insert it with NULL multi_hash
+			row, sqlErr = queries.Raw("SELECT insert_key($1, NULL)", peerModel.ID).QueryContext(ctx, c.DBH)
+		} else {
+			// If not an identity peer, insert it with NULL peer_id and the multihash
+			row, sqlErr = queries.Raw("SELECT insert_key(NULL, $1)", keyID).QueryContext(ctx, c.DBH)
+		}
+		if sqlErr != nil {
+			fmt.Printf("SQL ERR: %v", sqlErr)
+			return nil, sqlErr
+		}
+		row.Next()
+		err := row.Scan(&key)
 		if err != nil {
-			return nil, err
+			log.WithError(err).Printf("Could not scan key: < %d >\n", &key)
 		}
 
 		defer func() {
@@ -288,30 +343,24 @@ func (c *DBClient) insertRequest(
 			}
 		}()
 	} else {
-		row, err := queries.Raw("SELECT insert_key(NULL, $1)",
-			decoded,
-		).QueryContext(ctx, c.dbh)
-		if err != nil {
-			return nil, err
-		}
-
-		defer func() {
-			if err := row.Close(); err != nil {
-				log.WithError(err).Warnln("Could not close rows")
-			}
-		}()
+		key = keyModel.ID
 	}
 
-	rows, err := queries.Raw("SELECT insert_request($1, $2, $3, $4, $5, $6)",
+	rows, err := queries.Raw("SELECT insert_request($1, $2, $3, $4, $5, $6, $7, $8)",
 		timestamp,
 		requestType,
-		antID.String(),
-		peerID.String(),
-		keyID,
+		ant,
+		peer,
+		key,
 		types.StringArray(maddrStrs),
 		protocolsSetID,
 		agentVersionsID,
-	).QueryContext(ctx, c.dbh)
+	).QueryContext(ctx, c.DBH)
+	if err != nil {
+		fmt.Printf("\n\nERROR $1", err)
+		return nil, err
+	}
+
 	c.telemetry.InsertRequestHistogram.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
 		attribute.String("type", requestType),
 		attribute.Bool("success", err == nil),
@@ -467,14 +516,14 @@ func (c *DBClient) PersistRequest(
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		agentVersionID, avidErr = c.GetOrCreateAgentVersionID(ctx, c.dbh, agentVersion)
+		agentVersionID, avidErr = c.GetOrCreateAgentVersionID(ctx, c.DBH, agentVersion)
 		if avidErr != nil && !errors.Is(avidErr, ErrEmptyAgentVersion) && !errors.Is(psidErr, context.Canceled) {
 			log.WithError(avidErr).WithField("agentVersion", agentVersion).Warnln("Error getting or creating agent version id")
 		}
 		wg.Done()
 	}()
 	go func() {
-		protocolsSetID, psidErr = c.GetOrCreateProtocolsSetID(ctx, c.dbh, protocols)
+		protocolsSetID, psidErr = c.GetOrCreateProtocolsSetID(ctx, c.DBH, protocols)
 		if psidErr != nil && !errors.Is(psidErr, ErrEmptyProtocolsSet) && !errors.Is(psidErr, context.Canceled) {
 			log.WithError(psidErr).WithField("protocols", protocols).Warnln("Error getting or creating protocols set id")
 		}
@@ -539,7 +588,7 @@ func (c *DBClient) fillAgentVersionsCache(ctx context.Context) error {
 		return nil
 	}
 
-	avs, err := models.AgentVersions(qm.Limit(c.cfg.AgentVersionsCacheSize)).All(ctx, c.dbh)
+	avs, err := models.AgentVersions(qm.Limit(c.cfg.AgentVersionsCacheSize)).All(ctx, c.DBH)
 	if err != nil {
 		return err
 	}
@@ -558,7 +607,7 @@ func (c *DBClient) fillProtocolsSetCache(ctx context.Context) error {
 		return nil
 	}
 
-	protSets, err := models.ProtocolsSets(qm.Limit(c.cfg.ProtocolsSetCacheSize)).All(ctx, c.dbh)
+	protSets, err := models.ProtocolsSets(qm.Limit(c.cfg.ProtocolsSetCacheSize)).All(ctx, c.DBH)
 	if err != nil {
 		return err
 	}
@@ -577,7 +626,7 @@ func (c *DBClient) fillProtocolsCache(ctx context.Context) error {
 		return nil
 	}
 
-	prots, err := models.Protocols(qm.Limit(c.cfg.ProtocolsCacheSize)).All(ctx, c.dbh)
+	prots, err := models.Protocols(qm.Limit(c.cfg.ProtocolsCacheSize)).All(ctx, c.DBH)
 	if err != nil {
 		return err
 	}
@@ -587,4 +636,46 @@ func (c *DBClient) fillProtocolsCache(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *DBClient) UpsertPeer(mh string, agentVersionID null.Int, protocolSetID null.Int, timestamp time.Time) (int, error) {
+	rows, err := queries.Raw("SELECT upsert_peer($1, $2, $3, $4)",
+		mh, agentVersionID, protocolSetID, timestamp,
+	).Query(c.DBH)
+	if err != nil {
+		return 0, err
+	}
+
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.WithError(err).Warnln("Could not close rows")
+		}
+	}()
+
+	id := 0
+	if !rows.Next() {
+		return id, nil
+	}
+
+	if err = rows.Scan(&id); err != nil {
+		return 0, err
+	}
+
+	return id, nil
+}
+
+// FetchUnresolvedMultiAddresses fetches all multi addresses that were not resolved yet.
+func (c *DBClient) FetchUnresolvedMultiAddresses(ctx context.Context, limit int) (models.MultiAddressSlice, error) {
+	return models.MultiAddresses(
+		models.MultiAddressWhere.Resolved.EQ(false),
+		qm.OrderBy(models.MultiAddressColumns.CreatedAt),
+		qm.Limit(limit),
+	).All(ctx, c.DBH)
+}
+
+// Rollback calls rollback on the given transaction and logs the potential error.
+func Rollback(txn *sql.Tx) {
+	if err := txn.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+		log.WithError(err).Warnln("An error occurred when rolling back transaction")
+	}
 }

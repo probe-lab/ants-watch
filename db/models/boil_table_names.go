@@ -5,6 +5,7 @@ package models
 
 var TableNames = struct {
 	AgentVersions        string
+	IPAddresses          string
 	Keys                 string
 	MultiAddresses       string
 	PeerLogs             string
@@ -15,6 +16,7 @@ var TableNames = struct {
 	Requests             string
 }{
 	AgentVersions:        "agent_versions",
+	IPAddresses:          "ip_addresses",
 	Keys:                 "keys",
 	MultiAddresses:       "multi_addresses",
 	PeerLogs:             "peer_logs",

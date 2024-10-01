@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/probe-lab/ants-watch"
@@ -20,7 +22,7 @@ func main() {
 	upnp := flag.Bool("upnp", false, "Enable UPnP")
 	flag.Parse()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 	var queen *ants.Queen
 	if *upnp {
 		queen = ants.NewQueen(ctx, *postgresStr, "keys.db", 0, 0)
@@ -30,5 +32,9 @@ func main() {
 
 	go queen.Run(ctx)
 
-	<-ctx.Done()
+	// Simulate some condition to cancel the context after 5 minutes
+	time.Sleep(30 * time.Second)
+	cancel() // This will stop the Queen
+
+	fmt.Println("Context canceled manually")
 }

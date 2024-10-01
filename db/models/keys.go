@@ -24,9 +24,9 @@ import (
 
 // Key is an object representing the database table.
 type Key struct {
-	ID        int      `boil:"id" json:"id" toml:"id" yaml:"id"`
-	PeerID    null.Int `boil:"peer_id" json:"peer_id,omitempty" toml:"peer_id" yaml:"peer_id,omitempty"`
-	MultiHash string   `boil:"multi_hash" json:"multi_hash" toml:"multi_hash" yaml:"multi_hash"`
+	ID        int         `boil:"id" json:"id" toml:"id" yaml:"id"`
+	PeerID    null.Int    `boil:"peer_id" json:"peer_id,omitempty" toml:"peer_id" yaml:"peer_id,omitempty"`
+	MultiHash null.String `boil:"multi_hash" json:"multi_hash,omitempty" toml:"multi_hash" yaml:"multi_hash,omitempty"`
 
 	R *keyR `boil:"-" json:"-" toml:"-" yaml:"-"`
 	L keyL  `boil:"-" json:"-" toml:"-" yaml:"-"`
@@ -54,52 +54,14 @@ var KeyTableColumns = struct {
 
 // Generated where
 
-type whereHelpernull_Int struct{ field string }
-
-func (w whereHelpernull_Int) EQ(x null.Int) qm.QueryMod {
-	return qmhelper.WhereNullEQ(w.field, false, x)
-}
-func (w whereHelpernull_Int) NEQ(x null.Int) qm.QueryMod {
-	return qmhelper.WhereNullEQ(w.field, true, x)
-}
-func (w whereHelpernull_Int) LT(x null.Int) qm.QueryMod {
-	return qmhelper.Where(w.field, qmhelper.LT, x)
-}
-func (w whereHelpernull_Int) LTE(x null.Int) qm.QueryMod {
-	return qmhelper.Where(w.field, qmhelper.LTE, x)
-}
-func (w whereHelpernull_Int) GT(x null.Int) qm.QueryMod {
-	return qmhelper.Where(w.field, qmhelper.GT, x)
-}
-func (w whereHelpernull_Int) GTE(x null.Int) qm.QueryMod {
-	return qmhelper.Where(w.field, qmhelper.GTE, x)
-}
-func (w whereHelpernull_Int) IN(slice []int) qm.QueryMod {
-	values := make([]interface{}, 0, len(slice))
-	for _, value := range slice {
-		values = append(values, value)
-	}
-	return qm.WhereIn(fmt.Sprintf("%s IN ?", w.field), values...)
-}
-func (w whereHelpernull_Int) NIN(slice []int) qm.QueryMod {
-	values := make([]interface{}, 0, len(slice))
-	for _, value := range slice {
-		values = append(values, value)
-	}
-	return qm.WhereNotIn(fmt.Sprintf("%s NOT IN ?", w.field), values...)
-}
-
-func (w whereHelpernull_Int) IsNull() qm.QueryMod    { return qmhelper.WhereIsNull(w.field) }
-func (w whereHelpernull_Int) IsNotNull() qm.QueryMod { return qmhelper.WhereIsNotNull(w.field) }
-
 var KeyWhere = struct {
 	ID        whereHelperint
 	PeerID    whereHelpernull_Int
-	MultiHash whereHelperstring
+	MultiHash whereHelpernull_String
 }{
 	ID:        whereHelperint{field: "\"keys\".\"id\""},
 	PeerID:    whereHelpernull_Int{field: "\"keys\".\"peer_id\""},
-	MultiHash: whereHelperstring{field: "\"keys\".\"multi_hash\""},
+	MultiHash: whereHelpernull_String{field: "\"keys\".\"multi_hash\""},
 }
 
 // KeyRels is where relationship names are stored.
@@ -131,8 +93,8 @@ type keyL struct{}
 
 var (
 	keyAllColumns            = []string{"id", "peer_id", "multi_hash"}
-	keyColumnsWithoutDefault = []string{"multi_hash"}
-	keyColumnsWithDefault    = []string{"id", "peer_id"}
+	keyColumnsWithoutDefault = []string{}
+	keyColumnsWithDefault    = []string{"id", "peer_id", "multi_hash"}
 	keyPrimaryKeyColumns     = []string{"id"}
 	keyGeneratedColumns      = []string{"id"}
 )

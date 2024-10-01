@@ -19,7 +19,9 @@ import (
 	"github.com/probe-lab/go-libdht/kad/trie"
 
 	"github.com/probe-lab/ants-watch/db"
+	"github.com/probe-lab/ants-watch/maxmind"
 	"github.com/probe-lab/ants-watch/metrics"
+	"github.com/probe-lab/ants-watch/udger"
 )
 
 var logger = log.Logger("ants-queen")
@@ -40,7 +42,11 @@ type Queen struct {
 	portsOccupancy []bool
 	firstPort      uint16
 
-	dbc *db.DBClient
+	dbc     *db.DBClient
+	mmc     *maxmind.Client
+	uclient *udger.Client
+
+	resolveBatchSize int
 }
 
 func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16) *Queen {
@@ -63,17 +69,39 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		Password:               os.Getenv("DB_PASSWORD"),
 		MeterProvider:          mP,
 		TracerProvider:         tP,
+		ProtocolsCacheSize:     100,
 		ProtocolsSetCacheSize:  200,
 		AgentVersionsCacheSize: 200,
+		SSLMode:                "disable",
 	})
+	if err != nil {
+		logger.Errorf("Failed to initialize DB client: %v\n", err)
+	}
+
+	mmc, err := maxmind.NewClient(os.Getenv("MAXMIND_ASN_DB"), os.Getenv("MAXMIND_COUNTRY_DB"))
+	if err != nil {
+		logger.Errorf("Failed to initialized Maxmind client: %v\n", err)
+	}
+
+	filePathUdger := os.Getenv("UDGER_FILEPATH")
+	var uclient *udger.Client
+	if filePathUdger != "" {
+		uclient, err = udger.NewClient(filePathUdger)
+		if err != nil {
+			logger.Errorf("Failed to initialize Udger client with %s: %v\n", filePathUdger, err)
+		}
+	}
 
 	queen := &Queen{
-		nebulaDB: nebulaDB,
-		keysDB:   keysDB,
-		ants:     []*Ant{},
-		antsLogs: make(chan antslog.RequestLog, 1024),
-		seen:     make(map[peer.ID]struct{}),
-		dbc:      dbc,
+		nebulaDB:         nebulaDB,
+		keysDB:           keysDB,
+		ants:             []*Ant{},
+		antsLogs:         make(chan antslog.RequestLog, 1024),
+		seen:             make(map[peer.ID]struct{}),
+		dbc:              dbc,
+		mmc:              mmc,
+		uclient:          uclient,
+		resolveBatchSize: 1000,
 	}
 
 	if nPorts == 0 {
@@ -109,7 +137,10 @@ func (q *Queen) freePort(port uint16) {
 }
 
 func (q *Queen) Run(ctx context.Context) {
-	go q.consumeAntsLogs(ctx)
+	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	go q.consumeAntsLogs(cctx)
 	t := time.NewTicker(CRAWL_INTERVAL)
 	q.routine(ctx)
 
@@ -117,7 +148,7 @@ func (q *Queen) Run(ctx context.Context) {
 		select {
 		case <-t.C:
 			// crawl
-			q.routine(ctx)
+			q.routine(cctx)
 		case <-ctx.Done():
 			return
 		}
@@ -136,9 +167,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 	for {
 		select {
 		case log := <-q.antsLogs:
-			// if false {
 			reqType := kadpb.Message_MessageType(log.Type).String()
-			// TODO: persistant logging
 			fmt.Printf(
 				"%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n",
 				log.Timestamp.Format(time.RFC3339),
@@ -149,6 +178,10 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				log.Agent,
 				log.Maddrs,
 			)
+
+			// Keep this protocols slice empty for now,
+			// because we don't need it yet and I don't know how to get it
+			protocols := make([]string, 0)
 			q.dbc.PersistRequest(
 				ctx,
 				log.Timestamp,
@@ -158,26 +191,31 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				log.Target.B58String(), // key ID
 				log.Maddrs,
 				log.Agent,
-				nil)
-			// } else {
+				protocols)
 			if _, ok := q.seen[log.Requester]; !ok {
 				q.seen[log.Requester] = struct{}{}
 				if strings.Contains(log.Agent, "light") {
 					lnCount++
 				}
-				// count := len(q.seen)
-				// if count > 1 {
-				// 	fmt.Printf("\033[F")
-				// } else {
-				// 	fmt.Printf("%s \tstarting sniffing\n", time.Now().Format(time.RFC3339))
-				// }
 				fmt.Fprintf(f, "\r%s    %s\n", log.Requester, log.Agent)
-				// fmt.Printf("%s\ttotal: %d \tlight: %d\n", time.Now().Format(time.RFC3339), len(q.seen), lnCount)
 				logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
 			}
-			// }
+			logger.Info("Fetching multi addresses...")
+			dbmaddrs, err := q.dbc.FetchUnresolvedMultiAddresses(ctx, q.resolveBatchSize)
+			if err != nil {
+				logger.Errorf("fetching multi addresses: %v\n", err)
+			}
+			logger.Infof("Fetched %d multi addresses", len(dbmaddrs))
+			if len(dbmaddrs) == 0 {
+				logger.Errorf("Couldn't find multi addresses: %v\n", err)
+			}
+
+			if err = db.Resolve(ctx, q.dbc.DBH, q.mmc, q.uclient, dbmaddrs); err != nil {
+				logger.Warnf("Error resolving multi addresses: %v\n", err)
+			}
+
 		case <-ctx.Done():
-			return
+			logger.Info("Winding down..")
 		}
 	}
 }

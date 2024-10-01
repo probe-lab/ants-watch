@@ -6,7 +6,7 @@ CREATE TABLE keys
     -- Use peer ID for keys that are also peers
     peer_id          INT,
     -- The peer ID in the form of Qm... or 12D3...
-    multi_hash       TEXT        NOT NULL CHECK ( TRIM(multi_hash) != '' ),
+    multi_hash       TEXT UNIQUE,
 
     PRIMARY KEY (id),
 
