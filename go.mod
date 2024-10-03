@@ -2,7 +2,7 @@ module github.com/probe-lab/ants-watch
 
 replace (
 	// github.com/dennis-tra/nebula => ./nebula
-	github.com/dennis-tra/nebula-crawler => ./nebula
+	// github.com/dennis-tra/nebula-crawler => ./nebula
 	github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 	github.com/libp2p/go-libp2p-kad-dht => ./go-libp2p-kad-dht
 )
@@ -10,15 +10,15 @@ replace (
 go 1.23
 
 require (
-	github.com/dennis-tra/nebula-crawler v0.0.0-00010101000000-000000000000
+	github.com/dennis-tra/nebula-crawler v0.0.0-20240823114315-c41cfec78b8b
 	github.com/friendsofgo/errors v0.9.2
 	github.com/golang-migrate/migrate/v4 v4.18.1
 	github.com/jackc/pgx/v5 v5.5.4
 	github.com/lib/pq v1.10.9
 	github.com/libp2p/go-libp2p v0.36.2
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
-	github.com/mattn/go-sqlite3 v1.14.23
-	github.com/oschwald/geoip2-golang v1.11.0
+	github.com/mattn/go-sqlite3 v1.14.23 // indirect
+	github.com/oschwald/geoip2-golang v1.11.0 // indirect
 	github.com/probe-lab/go-libdht v0.1.2-0.20240821100354-770d7b4b2e71
 	github.com/sirupsen/logrus v1.9.3
 	github.com/uptrace/opentelemetry-go-extra/otelsql v0.3.2
@@ -124,7 +124,7 @@ require (
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
 	github.com/multiformats/go-multiaddr v0.13.0
-	github.com/multiformats/go-multiaddr-dns v0.3.1
+	github.com/multiformats/go-multiaddr-dns v0.3.1 // indirect
 	github.com/multiformats/go-multiaddr-fmt v0.1.0 // indirect
 	github.com/multiformats/go-multibase v0.2.0 // indirect
 	github.com/multiformats/go-multicodec v0.9.0 // indirect
@@ -153,7 +153,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
-	github.com/prometheus/client_golang v1.20.3
+	github.com/prometheus/client_golang v1.20.3 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.59.1 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect

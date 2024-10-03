@@ -3,7 +3,3 @@
 	url = https://github.com/probe-lab/go-libp2p-kad-dht.git
 	branch = ants-log
 
-[submodule "nebula"]
-	path = nebula
-	url = https://github.com/kasteph/nebula.git
-	branch = refactor/client-db

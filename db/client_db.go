@@ -1,14 +1,29 @@
+// mostly copy-pastad from https://github.com/dennis-tra/nebula/blob/main/db/client_db.go
+// except the `insertRequest` function
+
 package db
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/dennis-tra/nebula-crawler/config"
+	"github.com/dennis-tra/nebula-crawler/db"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	lru "github.com/hashicorp/golang-lru"
 	glog "github.com/ipfs/go-log/v2"
@@ -17,12 +32,10 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 
 	// mh "github.com/multiformats/go-multihash"
-	"github.com/dennis-tra/nebula-crawler/config"
-	ndb "github.com/dennis-tra/nebula-crawler/db"
-	nutils "github.com/dennis-tra/nebula-crawler/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/uptrace/opentelemetry-go-extra/otelsql"
 	"github.com/volatiletech/null/v8"
+	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/sqlboiler/v4/queries"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 	"github.com/volatiletech/sqlboiler/v4/types"
@@ -39,72 +52,27 @@ var migrations embed.FS
 
 var logger = glog.Logger("client-db")
 
-var (
-	ErrEmptyAgentVersion = fmt.Errorf("empty agent version")
-	ErrEmptyProtocol     = fmt.Errorf("empty protocol")
-	ErrEmptyProtocolsSet = fmt.Errorf("empty protocols set")
-)
+type DBClient struct {
+	ctx context.Context
+	cfg config.Database
 
-// type DatabaseConfig struct {
-// 	Host         string
-// 	Port         int
-// 	Name         string // Database name
-// 	User         string
-// 	Password     string
-// 	SSLMode      string //one of "require" or "disable"
-// 	MaxIdleConns int
+	// Database handler
+	DBH *sql.DB
 
-// 	// The cache size to hold agent versions in memory to skip database queries.
-// 	AgentVersionsCacheSize int
+	// protocols cache
+	agentVersions *lru.Cache
 
-// 	// The cache size to hold protocols in memory to skip database queries.
-// 	ProtocolsCacheSize int
+	// protocols cache
+	protocols *lru.Cache
 
-// 	// The cache size to hold sets of protocols in memory to skip database queries.
-// 	ProtocolsSetCacheSize int
+	// protocols set cache
+	protocolsSets *lru.Cache
 
-// 	MeterProvider  metric.MeterProvider
-// 	TracerProvider trace.TracerProvider
-// }
-
-// func (c *DatabaseConfig) DatabaseString() string {
-// 	return fmt.Sprintf(
-// 		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
-// 		c.Host,
-// 		c.Port,
-// 		c.Name,
-// 		c.User,
-// 		c.Password,
-// 		c.SSLMode,
-// 	)
-// }
-
-// type DBClient struct {
-// 	ctx context.Context
-// 	cfg DatabaseConfig
-
-// 	// Database handler
-// 	DBH *sql.DB
-
-// 	// protocols cache
-// 	agentVersions *lru.Cache
-
-// 	// protocols cache
-// 	protocols *lru.Cache
-
-// 	// protocols set cache
-// 	protocolsSets *lru.Cache
-
-// 	// Database telemetry
-// 	telemetry *mt.Telemetry
-// }
-
-type AntsDBClient struct {
-	*ndb.DBClient
-	Telemetry *mt.Telemetry
+	// Database telemetry
+	telemetry *mt.Telemetry
 }
 
-func InitDBClient(ctx context.Context, cfg *config.Database) (*AntsDBClient, error) {
+func InitDBClient(ctx context.Context, cfg *config.Database) (*DBClient, error) {
 	log.WithFields(log.Fields{
 		"host": cfg.DatabaseHost,
 		"port": cfg.DatabasePort,
@@ -137,34 +105,34 @@ func InitDBClient(ctx context.Context, cfg *config.Database) (*AntsDBClient, err
 		return nil, fmt.Errorf("new telemetry: %w", err)
 	}
 
-	client := &AntsDBClient{
-		DBClient: &ndb.DBClient{
-			Ctx: ctx,
-			Cfg: cfg,
-			Dbh: dbh,
-		},
-		Telemetry: telemetry,
-	}
-	client.ApplyMigrations(cfg, dbh)
+	client := &DBClient{ctx: ctx, cfg: *cfg, DBH: dbh, telemetry: telemetry}
+	client.applyMigrations(cfg, dbh)
 
-	client.AgentVersions, err = lru.New(cfg.AgentVersionsCacheSize)
+	client.agentVersions, err = lru.New(cfg.AgentVersionsCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("new agent versions lru cache: %w", err)
 	}
 
-	client.Protocols, err = lru.New(cfg.ProtocolsCacheSize)
+	client.protocols, err = lru.New(cfg.ProtocolsCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("new protocol lru cache: %w", err)
 	}
 
-	client.ProtocolsSets, err = lru.New(cfg.ProtocolsSetCacheSize)
+	client.protocolsSets, err = lru.New(cfg.ProtocolsSetCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("new protocols set lru cache: %w", err)
 	}
 
-	err = client.FillCaches(ctx)
-	if err != nil {
-		return nil, err
+	if err = client.fillAgentVersionsCache(ctx); err != nil {
+		return nil, fmt.Errorf("fill agent versions cache: %w", err)
+	}
+
+	if err = client.fillProtocolsCache(ctx); err != nil {
+		return nil, fmt.Errorf("fill protocols cache: %w", err)
+	}
+
+	if err = client.fillProtocolsSetCache(ctx); err != nil {
+		return nil, fmt.Errorf("fill protocols set cache: %w", err)
 	}
 
 	client.ensurePartitions(ctx, time.Now())
@@ -179,18 +147,79 @@ func InitDBClient(ctx context.Context, cfg *config.Database) (*AntsDBClient, err
 	return client, nil
 }
 
-func (c *AntsDBClient) ensurePartitions(ctx context.Context, baseDate time.Time) {
+func (c *DBClient) ensurePartitions(ctx context.Context, baseDate time.Time) {
 	lowerBound := time.Date(baseDate.Year(), baseDate.Month(), 1, 0, 0, 0, 0, baseDate.Location())
 	upperBound := lowerBound.AddDate(0, 1, 0)
 
-	query := ndb.PartitionQuery(models.TableNames.PeerLogs, lowerBound, upperBound)
-	if _, err := c.Dbh.ExecContext(ctx, query); err != nil {
+	query := partitionQuery(models.TableNames.PeerLogs, lowerBound, upperBound)
+	if _, err := c.DBH.ExecContext(ctx, query); err != nil {
 		log.WithError(err).WithField("query", query).Warnln("could not create peer_logs partition")
 	}
 
-	query = ndb.PartitionQuery(models.TableNames.Requests, lowerBound, upperBound)
-	if _, err := c.Dbh.ExecContext(ctx, query); err != nil {
+	query = partitionQuery(models.TableNames.Requests, lowerBound, upperBound)
+	if _, err := c.DBH.ExecContext(ctx, query); err != nil {
 		log.WithError(err).WithField("query", query).Warnln("could not create requests partition")
+	}
+}
+
+func partitionQuery(table string, lower time.Time, upper time.Time) string {
+	return fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s_%s_%s PARTITION OF %s FOR VALUES FROM ('%s') TO ('%s')",
+		table,
+		lower.Format("2006"),
+		lower.Format("01"),
+		table,
+		lower.Format("2006-01-02"),
+		upper.Format("2006-01-02"),
+	)
+}
+
+func (c *DBClient) applyMigrations(cfg *config.Database, dbh *sql.DB) {
+	tmpDir, err := os.MkdirTemp("", "nebula")
+	if err != nil {
+		log.WithError(err).WithField("pattern", "ants-watch").Warnln("Could not create tmp directory for migrations")
+		return
+	}
+	defer func() {
+		if err = os.RemoveAll(tmpDir); err != nil {
+			log.WithError(err).WithField("tmpDir", tmpDir).Warnln("Could not clean up tmp directory")
+		}
+	}()
+	log.WithField("dir", tmpDir).Debugln("Created temporary directory")
+
+	err = fs.WalkDir(migrations, ".", func(path string, d fs.DirEntry, err error) error {
+		join := filepath.Join(tmpDir, path)
+		if d.IsDir() {
+			return os.MkdirAll(join, 0o755)
+		}
+
+		data, err := migrations.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read file: %w", err)
+		}
+
+		return os.WriteFile(join, data, 0o644)
+	})
+	if err != nil {
+		log.WithError(err).Warnln("Could not create migrations files")
+		return
+	}
+
+	// Apply migrations
+	driver, err := postgres.WithInstance(dbh, &postgres.Config{})
+	if err != nil {
+		log.WithError(err).Warnln("Could not create driver instance")
+		return
+	}
+
+	m, err := migrate.NewWithDatabaseInstance("file://"+filepath.Join(tmpDir, "migrations"), cfg.DatabaseName, driver)
+	if err != nil {
+		log.WithError(err).Warnln("Could not create migrate instance")
+		return
+	}
+
+	if err = m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		log.WithError(err).Warnln("Couldn't apply migrations")
+		return
 	}
 }
 
@@ -198,7 +227,7 @@ type InsertRequestResult struct {
 	PID peer.ID
 }
 
-func (c *AntsDBClient) insertRequest(
+func (c *DBClient) insertRequest(
 	ctx context.Context,
 	timestamp time.Time,
 	requestType string,
@@ -209,12 +238,12 @@ func (c *AntsDBClient) insertRequest(
 	protocolsSetID null.Int,
 	agentVersionsID null.Int,
 ) (*InsertRequestResult, error) {
-	maddrStrs := nutils.MaddrsToAddrs(maddrs)
+	maddrStrs := MaddrsToAddrs(maddrs)
 	start := time.Now()
 
 	// we want to upsert peers before anything else
 	// since it could be an ant or a key
-	peer, err := c.UpsertPeerForAnts(
+	peer, err := c.UpsertPeer(
 		peerID.String(),
 		agentVersionsID,
 		protocolsSetID,
@@ -225,14 +254,14 @@ func (c *AntsDBClient) insertRequest(
 	}
 
 	// insert ant to peers table if cannot be found
-	antModel, err := models.Peers(qm.Where("multi_hash=?", antID.String())).One(ctx, c.Dbh)
+	antModel, err := models.Peers(qm.Where("multi_hash=?", antID.String())).One(ctx, c.DBH)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, err
 	}
 
 	var ant int
 	if antModel == nil {
-		ant, _ = c.UpsertPeerForAnts(
+		ant, _ = c.UpsertPeer(
 			antID.String(),
 			agentVersionsID,
 			protocolsSetID,
@@ -245,20 +274,20 @@ func (c *AntsDBClient) insertRequest(
 	// taking care of keys last since it could be a peer upserted
 	// from looking for an ant or a peer above
 	var key int
-	keyModel, _ := models.Keys(qm.Where("multi_hash=?", keyID)).One(ctx, c.Dbh)
+	keyModel, _ := models.Keys(qm.Where("multi_hash=?", keyID)).One(ctx, c.DBH)
 	if keyModel == nil {
 		var row *sql.Rows
 		var sqlErr error
 
 		// Decode the keyID to check if it's a peer ID ("identity" multihash)
 		// if decoded, err := mh.Decode([]byte(keyID)); err == nil && decoded.Name == "identity" {
-		peerModel, _ := models.Peers(qm.Where("multi_hash=?", keyID)).One(ctx, c.Dbh)
+		peerModel, _ := models.Peers(qm.Where("multi_hash=?", keyID)).One(ctx, c.DBH)
 		if peerModel != nil {
 			// If it's an identity peer, insert it with NULL multi_hash
-			row, sqlErr = queries.Raw("SELECT insert_key($1, NULL)", peerModel.ID).QueryContext(ctx, c.Dbh)
+			row, sqlErr = queries.Raw("SELECT insert_key($1, NULL)", peerModel.ID).QueryContext(ctx, c.DBH)
 		} else {
 			// If not an identity peer, insert it with NULL peer_id and the multihash
-			row, sqlErr = queries.Raw("SELECT insert_key(NULL, $1)", keyID).QueryContext(ctx, c.Dbh)
+			row, sqlErr = queries.Raw("SELECT insert_key(NULL, $1)", keyID).QueryContext(ctx, c.DBH)
 		}
 		if sqlErr != nil {
 			fmt.Printf("SQL ERR: %v", sqlErr)
@@ -288,13 +317,13 @@ func (c *AntsDBClient) insertRequest(
 		types.StringArray(maddrStrs),
 		protocolsSetID,
 		agentVersionsID,
-	).QueryContext(ctx, c.Dbh)
+	).QueryContext(ctx, c.DBH)
 	if err != nil {
 		fmt.Printf("\n\nERROR $1", err)
 		return nil, err
 	}
 
-	c.Telemetry.InsertRequestHistogram.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
+	c.telemetry.InsertRequestHistogram.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
 		attribute.String("type", requestType),
 		attribute.Bool("success", err == nil),
 	))
@@ -322,7 +351,117 @@ func (c *AntsDBClient) insertRequest(
 	return &ivr, nil
 }
 
-func (c *AntsDBClient) PersistRequest(
+func MaddrsToAddrs(maddrs []ma.Multiaddr) []string {
+	addrs := make([]string, len(maddrs))
+	for i, maddr := range maddrs {
+		addrs[i] = maddr.String()
+	}
+	return addrs
+}
+
+// protocolsSetHash returns a unique hash digest for this set of protocol IDs as it's also generated by the database.
+// It expects the list of protocolIDs to be sorted in ascending order.
+func (c *DBClient) protocolsSetHash(protocolIDs []int64) string {
+	protocolStrs := make([]string, len(protocolIDs))
+	for i, id := range protocolIDs {
+		protocolStrs[i] = strconv.Itoa(int(id)) // safe because protocol IDs are just integers in the database.
+	}
+	dat := []byte("{" + strings.Join(protocolStrs, ",") + "}")
+
+	h := sha256.New()
+	h.Write(dat)
+	return string(h.Sum(nil))
+}
+
+func (c *DBClient) GetOrCreateProtocolsSetID(ctx context.Context, exec boil.ContextExecutor, protocols []string) (*int, error) {
+	if len(protocols) == 0 {
+		return nil, db.ErrEmptyAgentVersion
+	}
+
+	protocolIDs := make([]int64, len(protocols))
+	for i, protocol := range protocols {
+		protocolID, err := c.GetOrCreateProtocol(ctx, exec, protocol)
+		if errors.Is(err, db.ErrEmptyProtocol) {
+			continue
+		} else if err != nil {
+			return nil, fmt.Errorf("get or create protocol: %w", err)
+		}
+		protocolIDs[i] = int64(*protocolID)
+	}
+
+	sort.Slice(protocolIDs, func(i, j int) bool { return protocolIDs[i] < protocolIDs[j] })
+
+	key := c.protocolsSetHash(protocolIDs)
+	if id, found := c.protocolsSets.Get(key); found {
+		c.telemetry.CacheQueriesCount.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("entity", "protocol_set"),
+			attribute.Bool("hit", true),
+		))
+		return id.(*int), nil
+	}
+	c.telemetry.CacheQueriesCount.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("entity", "protocol_set"),
+		attribute.Bool("hit", false),
+	))
+
+	log.WithField("key", hex.EncodeToString([]byte(key))).Infoln("Upsert protocols set")
+	row := exec.QueryRowContext(ctx, "SELECT upsert_protocol_set_id($1)", types.Int64Array(protocolIDs))
+	if row.Err() != nil {
+		return nil, fmt.Errorf("unable to upsert protocols set: %w", row.Err())
+	}
+
+	var protocolsSetID *int
+	if err := row.Scan(&protocolsSetID); err != nil {
+		return nil, fmt.Errorf("unable to scan result from upsert protocol set id: %w", err)
+	}
+
+	if protocolsSetID == nil {
+		return nil, fmt.Errorf("protocols set not created")
+	}
+
+	c.protocolsSets.Add(key, protocolsSetID)
+
+	return protocolsSetID, nil
+}
+
+func (c *DBClient) GetOrCreateProtocol(ctx context.Context, exec boil.ContextExecutor, protocol string) (*int, error) {
+	if protocol == "" {
+		return nil, db.ErrEmptyProtocol
+	}
+
+	if id, found := c.protocols.Get(protocol); found {
+		c.telemetry.CacheQueriesCount.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("entity", "protocol"),
+			attribute.Bool("hit", true),
+		))
+		return id.(*int), nil
+	}
+	c.telemetry.CacheQueriesCount.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("entity", "protocol"),
+		attribute.Bool("hit", false),
+	))
+
+	log.WithField("protocol", protocol).Infoln("Upsert protocol")
+	row := exec.QueryRowContext(ctx, "SELECT upsert_protocol($1)", protocol)
+	if row.Err() != nil {
+		return nil, fmt.Errorf("unable to upsert protocol: %w", row.Err())
+	}
+
+	var protocolID *int
+	if err := row.Scan(&protocolID); err != nil {
+		return nil, fmt.Errorf("unable to scan result from upsert protocol: %w", err)
+	}
+
+	if protocolID == nil {
+		return nil, fmt.Errorf("protocol not created")
+	}
+
+	c.protocols.Add(protocol, protocolID)
+
+	return protocolID, nil
+}
+
+func (c *DBClient) PersistRequest(
 	ctx context.Context,
 	timestamp time.Time,
 	requestType string,
@@ -339,15 +478,15 @@ func (c *AntsDBClient) PersistRequest(
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		agentVersionID, avidErr = c.GetOrCreateAgentVersionID(ctx, c.Dbh, agentVersion)
-		if avidErr != nil && !errors.Is(avidErr, ErrEmptyAgentVersion) && !errors.Is(psidErr, context.Canceled) {
+		agentVersionID, avidErr = c.GetOrCreateAgentVersionID(ctx, c.DBH, agentVersion)
+		if avidErr != nil && !errors.Is(avidErr, db.ErrEmptyAgentVersion) && !errors.Is(psidErr, context.Canceled) {
 			log.WithError(avidErr).WithField("agentVersion", agentVersion).Warnln("Error getting or creating agent version id")
 		}
 		wg.Done()
 	}()
 	go func() {
-		protocolsSetID, psidErr = c.GetOrCreateProtocolsSetID(ctx, c.Dbh, protocols)
-		if psidErr != nil && !errors.Is(psidErr, ErrEmptyProtocolsSet) && !errors.Is(psidErr, context.Canceled) {
+		protocolsSetID, psidErr = c.GetOrCreateProtocolsSetID(ctx, c.DBH, protocols)
+		if psidErr != nil && !errors.Is(psidErr, db.ErrEmptyProtocolsSet) && !errors.Is(psidErr, context.Canceled) {
 			log.WithError(psidErr).WithField("protocols", protocols).Warnln("Error getting or creating protocols set id")
 		}
 		wg.Done()
@@ -367,10 +506,104 @@ func (c *AntsDBClient) PersistRequest(
 	)
 }
 
-func (c *AntsDBClient) UpsertPeerForAnts(mh string, agentVersionID null.Int, protocolSetID null.Int, timestamp time.Time) (int, error) {
+func (c *DBClient) GetOrCreateAgentVersionID(ctx context.Context, exec boil.ContextExecutor, agentVersion string) (*int, error) {
+	if agentVersion == "" {
+		return nil, db.ErrEmptyAgentVersion
+	}
+
+	if id, found := c.agentVersions.Get(agentVersion); found {
+		c.telemetry.CacheQueriesCount.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("entity", "agent_version"),
+			attribute.Bool("hit", true),
+		))
+		return id.(*int), nil
+	}
+	c.telemetry.CacheQueriesCount.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("entity", "agent_version"),
+		attribute.Bool("hit", false),
+	))
+
+	log.WithField("agentVersion", agentVersion).Infoln("Upsert agent version")
+	row := exec.QueryRowContext(ctx, "SELECT upsert_agent_version($1)", agentVersion)
+	if row.Err() != nil {
+		return nil, fmt.Errorf("unable to upsert agent version: %w", row.Err())
+	}
+
+	var agentVersionID *int
+	if err := row.Scan(&agentVersionID); err != nil {
+		return nil, fmt.Errorf("unable to scan result from upsert agent version: %w", err)
+	}
+
+	if agentVersionID == nil {
+		return nil, fmt.Errorf("agentVersion not created")
+	}
+
+	c.agentVersions.Add(agentVersion, agentVersionID)
+
+	return agentVersionID, nil
+}
+
+// fillAgentVersionsCache fetches all rows until agent version cache size from the agent_versions table and
+// initializes the DB clients agent version cache.
+func (c *DBClient) fillAgentVersionsCache(ctx context.Context) error {
+	if c.cfg.AgentVersionsCacheSize == 0 {
+		return nil
+	}
+
+	avs, err := models.AgentVersions(qm.Limit(c.cfg.AgentVersionsCacheSize)).All(ctx, c.DBH)
+	if err != nil {
+		return err
+	}
+
+	for _, av := range avs {
+		c.agentVersions.Add(av.AgentVersion, &av.ID)
+	}
+
+	return nil
+}
+
+// fillProtocolsSetCache fetches all rows until protocolSet cache size from the protocolsSets table and
+// initializes the DB clients protocolsSets cache.
+func (c *DBClient) fillProtocolsSetCache(ctx context.Context) error {
+	if c.cfg.ProtocolsSetCacheSize == 0 {
+		return nil
+	}
+
+	protSets, err := models.ProtocolsSets(qm.Limit(c.cfg.ProtocolsSetCacheSize)).All(ctx, c.DBH)
+	if err != nil {
+		return err
+	}
+
+	for _, ps := range protSets {
+		c.protocolsSets.Add(string(ps.Hash), &ps.ID)
+	}
+
+	return nil
+}
+
+// fillProtocolsCache fetches all rows until protocol cache size from the protocols table and
+// initializes the DB clients protocols cache.
+func (c *DBClient) fillProtocolsCache(ctx context.Context) error {
+	if c.cfg.ProtocolsCacheSize == 0 {
+		return nil
+	}
+
+	prots, err := models.Protocols(qm.Limit(c.cfg.ProtocolsCacheSize)).All(ctx, c.DBH)
+	if err != nil {
+		return err
+	}
+
+	for _, p := range prots {
+		c.protocols.Add(p.Protocol, &p.ID)
+	}
+
+	return nil
+}
+
+func (c *DBClient) UpsertPeer(mh string, agentVersionID null.Int, protocolSetID null.Int, timestamp time.Time) (int, error) {
 	rows, err := queries.Raw("SELECT upsert_peer($1, $2, $3, $4)",
 		mh, agentVersionID, protocolSetID, timestamp,
-	).Query(c.Dbh)
+	).Query(c.DBH)
 	if err != nil {
 		return 0, err
 	}
@@ -393,10 +626,11 @@ func (c *AntsDBClient) UpsertPeerForAnts(mh string, agentVersionID null.Int, pro
 	return id, nil
 }
 
-func (c *AntsDBClient) FetchUnresolvedMultiAddrsForAnts(ctx context.Context, limit int) (models.MultiAddressSlice, error) {
+// FetchUnresolvedMultiAddresses fetches all multi addresses that were not resolved yet.
+func (c *DBClient) FetchUnresolvedMultiAddresses(ctx context.Context, limit int) (models.MultiAddressSlice, error) {
 	return models.MultiAddresses(
 		models.MultiAddressWhere.Resolved.EQ(false),
 		qm.OrderBy(models.MultiAddressColumns.CreatedAt),
 		qm.Limit(limit),
-	).All(ctx, c.Dbh)
+	).All(ctx, c.DBH)
 }

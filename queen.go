@@ -43,7 +43,7 @@ type Queen struct {
 	portsOccupancy []bool
 	firstPort      uint16
 
-	dbc     *db.AntsDBClient
+	dbc     *db.DBClient
 	mmc     *maxmind.Client
 	uclient *udger.Client
 
@@ -202,7 +202,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
 			}
 			logger.Info("Fetching multi addresses...")
-			dbmaddrs, err := q.dbc.FetchUnresolvedMultiAddrsForAnts(ctx, q.resolveBatchSize)
+			dbmaddrs, err := q.dbc.FetchUnresolvedMultiAddresses(ctx, q.resolveBatchSize)
 			if err != nil {
 				logger.Errorf("fetching multi addresses: %v\n", err)
 			}
@@ -211,7 +211,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				logger.Errorf("Couldn't find multi addresses: %v\n", err)
 			}
 
-			if err = db.Resolve(ctx, q.dbc.Dbh, q.mmc, q.uclient, dbmaddrs); err != nil {
+			if err = db.Resolve(ctx, q.dbc.DBH, q.mmc, q.uclient, dbmaddrs); err != nil {
 				logger.Warnf("Error resolving multi addresses: %v\n", err)
 			}
 
