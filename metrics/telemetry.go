@@ -6,11 +6,8 @@ package metrics
 import (
 	"context"
 	"fmt"
-	"net/http"
 	_ "net/http/pprof"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
@@ -92,28 +89,7 @@ func NewTracerProvider(ctx context.Context, host string, port int) (trace.Tracer
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("nebula"),
+			semconv.ServiceNameKey.String("ants-watch"),
 		)),
 	), nil
-}
-
-// ListenAndServe starts an HTTP server and exposes prometheus and pprof
-// metrics.
-func ListenAndServe(host string, port int) {
-	addr := fmt.Sprintf("%s:%d", host, port)
-	log.WithField("addr", addr).Debugln("Starting telemetry endpoint")
-
-	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/health", func(rw http.ResponseWriter, req *http.Request) {
-		log.Debugln("Responding to health check")
-		if HealthStatus.Load() {
-			rw.WriteHeader(http.StatusOK)
-		} else {
-			rw.WriteHeader(http.StatusServiceUnavailable)
-		}
-	})
-
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.WithError(err).Warnln("Error serving prometheus")
-	}
 }

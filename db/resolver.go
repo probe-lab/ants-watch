@@ -12,9 +12,10 @@ import (
 	"github.com/volatiletech/null/v8"
 	"github.com/volatiletech/sqlboiler/v4/boil"
 
+	"github.com/dennis-tra/nebula-crawler/db"
+	"github.com/dennis-tra/nebula-crawler/maxmind"
+	"github.com/dennis-tra/nebula-crawler/udger"
 	"github.com/probe-lab/ants-watch/db/models"
-	"github.com/probe-lab/ants-watch/maxmind"
-	"github.com/probe-lab/ants-watch/udger"
 )
 
 func Resolve(ctx context.Context, dbh *sql.DB, mmc *maxmind.Client, uclient *udger.Client, dbmaddrs models.MultiAddressSlice) error {
@@ -35,7 +36,7 @@ func resolveAddr(ctx context.Context, dbh *sql.DB, mmc *maxmind.Client, uclient 
 	if err != nil {
 		return fmt.Errorf("begin txn: %w", err)
 	}
-	defer Rollback(txn)
+	defer db.Rollback(txn)
 
 	maddr, err := ma.NewMultiaddr(dbmaddr.Maddr)
 	if err != nil {

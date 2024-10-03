@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dennis-tra/nebula-crawler/config"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/antslog"
 	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
@@ -18,10 +19,10 @@ import (
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 	"github.com/probe-lab/go-libdht/kad/trie"
 
+	"github.com/dennis-tra/nebula-crawler/maxmind"
+	"github.com/dennis-tra/nebula-crawler/tele"
+	"github.com/dennis-tra/nebula-crawler/udger"
 	"github.com/probe-lab/ants-watch/db"
-	"github.com/probe-lab/ants-watch/maxmind"
-	"github.com/probe-lab/ants-watch/metrics"
-	"github.com/probe-lab/ants-watch/udger"
 )
 
 var logger = log.Logger("ants-queen")
@@ -42,7 +43,7 @@ type Queen struct {
 	portsOccupancy []bool
 	firstPort      uint16
 
-	dbc     *db.DBClient
+	dbc     *db.AntsDBClient
 	mmc     *maxmind.Client
 	uclient *udger.Client
 
@@ -58,21 +59,21 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		fmt.Errorf("Port must be an integer", err)
 	}
 
-	mP, _ := metrics.NewMeterProvider()
-	tP, _ := metrics.NewTracerProvider(ctx, "", 0)
+	mP, _ := tele.NewMeterProvider()
+	tP, _ := tele.NewTracerProvider(ctx, "", 0)
 
-	dbc, err := db.InitDBClient(ctx, &db.DatabaseConfig{
-		Host:                   os.Getenv("DB_HOST"),
-		Port:                   dbPort,
-		Name:                   os.Getenv("DB_DATABASE"),
-		User:                   os.Getenv("DB_USER"),
-		Password:               os.Getenv("DB_PASSWORD"),
+	dbc, err := db.InitDBClient(ctx, &config.Database{
+		DatabaseHost:           os.Getenv("DB_HOST"),
+		DatabasePort:           dbPort,
+		DatabaseName:           os.Getenv("DB_DATABASE"),
+		DatabaseUser:           os.Getenv("DB_USER"),
+		DatabasePassword:       os.Getenv("DB_PASSWORD"),
 		MeterProvider:          mP,
 		TracerProvider:         tP,
 		ProtocolsCacheSize:     100,
 		ProtocolsSetCacheSize:  200,
 		AgentVersionsCacheSize: 200,
-		SSLMode:                "disable",
+		DatabaseSSLMode:        os.Getenv("DB_SSLMODE"),
 	})
 	if err != nil {
 		logger.Errorf("Failed to initialize DB client: %v\n", err)
@@ -201,7 +202,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
 			}
 			logger.Info("Fetching multi addresses...")
-			dbmaddrs, err := q.dbc.FetchUnresolvedMultiAddresses(ctx, q.resolveBatchSize)
+			dbmaddrs, err := q.dbc.FetchUnresolvedMultiAddrsForAnts(ctx, q.resolveBatchSize)
 			if err != nil {
 				logger.Errorf("fetching multi addresses: %v\n", err)
 			}
@@ -210,7 +211,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				logger.Errorf("Couldn't find multi addresses: %v\n", err)
 			}
 
-			if err = db.Resolve(ctx, q.dbc.DBH, q.mmc, q.uclient, dbmaddrs); err != nil {
+			if err = db.Resolve(ctx, q.dbc.Dbh, q.mmc, q.uclient, dbmaddrs); err != nil {
 				logger.Warnf("Error resolving multi addresses: %v\n", err)
 			}
 
