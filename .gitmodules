@@ -1,4 +1,4 @@
 [submodule "go-libp2p-kad-dht"]
 	path = go-libp2p-kad-dht
-	url = https://github.com/probe-lab/go-libp2p-kad-dht.git
+	url = git@github.com:probe-lab/go-libp2p-kad-dht.git
 	branch = ants-log
