@@ -7,10 +7,14 @@ import (
 	"strings"
 	"time"
 
+	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/antslog"
 	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	"github.com/probe-lab/go-libdht/kad"
 	"github.com/probe-lab/go-libdht/kad/key"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
@@ -23,6 +27,9 @@ var logger = log.Logger("ants-queen")
 type Queen struct {
 	nebulaDB *NebulaDB
 	keysDB   *KeysDB
+
+	peerstore peerstore.Peerstore
+	datastore ds.Batching
 
 	ants     []*Ant
 	antsLogs chan antslog.RequestLog
@@ -37,16 +44,22 @@ type Queen struct {
 	firstPort      uint16
 }
 
-func NewQueen(dbConnString string, keysDbPath string, nPorts, firstPort uint16) *Queen {
+func NewQueen(dbConnString string, keysDbPath string, nPorts, firstPort uint16) (*Queen, error) {
 	nebulaDB := NewNebulaDB(dbConnString)
 	keysDB := NewKeysDB(keysDbPath)
+	peerstore, err := pstoremem.NewPeerstore()
+	if err != nil {
+		return nil, err
+	}
 
 	queen := &Queen{
-		nebulaDB: nebulaDB,
-		keysDB:   keysDB,
-		ants:     []*Ant{},
-		antsLogs: make(chan antslog.RequestLog, 1024),
-		seen:     make(map[peer.ID]struct{}),
+		nebulaDB:  nebulaDB,
+		keysDB:    keysDB,
+		peerstore: peerstore,
+		datastore: dssync.MutexWrap(ds.NewMapDatastore()),
+		ants:      []*Ant{},
+		antsLogs:  make(chan antslog.RequestLog, 1024),
+		seen:      make(map[peer.ID]struct{}),
 	}
 
 	if nPorts == 0 {
@@ -59,7 +72,7 @@ func NewQueen(dbConnString string, keysDbPath string, nPorts, firstPort uint16) 
 
 	logger.Debug("queen created")
 
-	return queen
+	return queen, nil
 }
 
 func (q *Queen) takeAvailablePort() (uint16, error) {
@@ -109,14 +122,22 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 	for {
 		select {
 		case log := <-q.antsLogs:
+			maddrs := q.peerstore.Addrs(log.Requester)
+			var agent string
+			peerstoreAgent, err := q.peerstore.Get(log.Requester, "AgentVersion")
+			if err != nil {
+				agent = "unknown"
+			} else {
+				agent = peerstoreAgent.(string)
+			}
 			if false {
 				reqType := kadpb.Message_MessageType(log.Type).String()
 				// TODO: persistant logging
-				fmt.Printf("%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n", log.Timestamp.Format(time.RFC3339), log.Self, reqType, log.Requester, log.Target.B58String(), log.Agent, log.Maddrs)
+				fmt.Printf("%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n", log.Timestamp.Format(time.RFC3339), log.Self, reqType, log.Requester, log.Target.B58String(), agent, maddrs)
 			} else {
 				if _, ok := q.seen[log.Requester]; !ok {
 					q.seen[log.Requester] = struct{}{}
-					if strings.Contains(log.Agent, "light") {
+					if strings.Contains(agent, "light") {
 						lnCount++
 					}
 					// count := len(q.seen)
@@ -125,9 +146,9 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 					// } else {
 					// 	fmt.Printf("%s \tstarting sniffing\n", time.Now().Format(time.RFC3339))
 					// }
-					fmt.Fprintf(f, "\r%s    %s\n", log.Requester, log.Agent)
+					fmt.Fprintf(f, "\r%s    %s\n", log.Requester, agent)
 					// fmt.Printf("%s\ttotal: %d \tlight: %d\n", time.Now().Format(time.RFC3339), len(q.seen), lnCount)
-					logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
+					logger.Debugf("total: %d \tlight: %d \tqueue len: %d", len(q.seen), lnCount, len(q.antsLogs))
 				}
 			}
 		case <-ctx.Done():
@@ -196,7 +217,7 @@ func (q *Queen) routine(ctx context.Context) {
 			logger.Error("trying to spwan new ant: ")
 			continue
 		}
-		ant, err := SpawnAnt(ctx, key, port, q.antsLogs)
+		ant, err := SpawnAnt(ctx, key, q.peerstore, q.datastore, port, q.antsLogs)
 		if err != nil {
 			logger.Warn("error creating ant", err)
 		}

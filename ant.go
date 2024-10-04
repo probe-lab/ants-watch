@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
 	antslog "github.com/libp2p/go-libp2p-kad-dht/antslog"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
@@ -27,7 +29,7 @@ type Ant struct {
 	port  uint16
 }
 
-func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, port uint16, logsChan chan antslog.RequestLog) (*Ant, error) {
+func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.Peerstore, datastore ds.Batching, port uint16, logsChan chan antslog.RequestLog) (*Ant, error) {
 	pid, _ := peer.IDFromPrivateKey(privKey)
 	logger.Debugf("spawning ant. kadid: %s, peerid: %s", PeeridToKadid(pid).HexString(), pid)
 
@@ -47,6 +49,7 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, port uint16, logsChan
 	opts := []libp2p.Option{
 		libp2p.UserAgent("celestiant"),
 		libp2p.Identity(privKey),
+		libp2p.Peerstore(peerstore),
 		libp2p.DisableRelay(),
 
 		libp2p.ListenAddrStrings(listenAddrs...),
@@ -66,6 +69,7 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, port uint16, logsChan
 		kad.Mode(kad.ModeServer),
 		kad.BootstrapPeers(BootstrapPeers(celestiaNet)...),
 		kad.ProtocolPrefix(protocol.ID(fmt.Sprintf("/celestia/%s", celestiaNet))),
+		kad.Datastore(datastore),
 		kad.RequestsLogChan(logsChan),
 	}
 	dht, err := kad.New(ctx, h, dhtOpts...)

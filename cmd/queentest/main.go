@@ -22,10 +22,14 @@ func main() {
 
 	ctx := context.Background()
 	var queen *ants.Queen
+	var err error
 	if *upnp {
-		queen = ants.NewQueen(*postgresStr, "keys.db", 0, 0)
+		queen, err = ants.NewQueen(*postgresStr, "keys.db", 0, 0)
 	} else {
-		queen = ants.NewQueen(*postgresStr, "keys.db", uint16(*nPorts), uint16(*firstPort))
+		queen, err = ants.NewQueen(*postgresStr, "keys.db", uint16(*nPorts), uint16(*firstPort))
+	}
+	if err != nil {
+		panic(err)
 	}
 
 	go queen.Run(ctx)
