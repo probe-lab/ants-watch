@@ -27,6 +27,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	lru "github.com/hashicorp/golang-lru"
 	glog "github.com/ipfs/go-log/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
@@ -70,6 +71,9 @@ type DBClient struct {
 
 	// Database telemetry
 	telemetry *mt.Telemetry
+
+	Pool      *pgxpool.Pool
+	BatchSize int
 }
 
 func InitDBClient(ctx context.Context, cfg *config.Database) (*DBClient, error) {
@@ -81,7 +85,8 @@ func InitDBClient(ctx context.Context, cfg *config.Database) (*DBClient, error) 
 		"ssl":  cfg.DatabaseSSLMode,
 	}).Infoln("Initializing database client")
 
-	dbh, err := otelsql.Open("postgres", cfg.DatabaseSourceName(),
+	connString := cfg.DatabaseSourceName()
+	dbh, err := otelsql.Open("postgres", connString,
 		otelsql.WithAttributes(semconv.DBSystemPostgreSQL),
 		otelsql.WithMeterProvider(cfg.MeterProvider),
 		otelsql.WithTracerProvider(cfg.TracerProvider),
@@ -105,7 +110,19 @@ func InitDBClient(ctx context.Context, cfg *config.Database) (*DBClient, error) 
 		return nil, fmt.Errorf("new telemetry: %w", err)
 	}
 
-	client := &DBClient{ctx: ctx, cfg: *cfg, DBH: dbh, telemetry: telemetry}
+	pgxPool, err := pgxpool.New(ctx, connString)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create connection pool: %w", err)
+	}
+
+	client := &DBClient{
+		ctx:       ctx,
+		cfg:       *cfg,
+		DBH:       dbh,
+		telemetry: telemetry,
+		Pool:      pgxPool,
+		BatchSize: 1000, // TODO: remove hardcoding
+	}
 	client.applyMigrations(cfg, dbh)
 
 	client.agentVersions, err = lru.New(cfg.AgentVersionsCacheSize)
@@ -241,79 +258,12 @@ func (c *DBClient) insertRequest(
 	maddrStrs := MaddrsToAddrs(maddrs)
 	start := time.Now()
 
-	// we want to upsert peers before anything else
-	// since it could be an ant or a key
-	peer, err := c.UpsertPeer(
-		peerID.String(),
-		agentVersionsID,
-		protocolsSetID,
-		timestamp,
-	)
-	if err != nil {
-		log.WithError(err).Printf("Could not upsert: < %s >\n", peerID.String())
-	}
-
-	// insert ant to peers table if cannot be found
-	antModel, err := models.Peers(qm.Where("multi_hash=?", antID.String())).One(ctx, c.DBH)
-	if err != nil && err != sql.ErrNoRows {
-		return nil, err
-	}
-
-	var ant int
-	if antModel == nil {
-		ant, _ = c.UpsertPeer(
-			antID.String(),
-			agentVersionsID,
-			protocolsSetID,
-			timestamp,
-		)
-	} else {
-		ant = antModel.ID
-	}
-
-	// taking care of keys last since it could be a peer upserted
-	// from looking for an ant or a peer above
-	var key int
-	keyModel, _ := models.Keys(qm.Where("multi_hash=?", keyID)).One(ctx, c.DBH)
-	if keyModel == nil {
-		var row *sql.Rows
-		var sqlErr error
-
-		// Decode the keyID to check if it's a peer ID ("identity" multihash)
-		// if decoded, err := mh.Decode([]byte(keyID)); err == nil && decoded.Name == "identity" {
-		peerModel, _ := models.Peers(qm.Where("multi_hash=?", keyID)).One(ctx, c.DBH)
-		if peerModel != nil {
-			// If it's an identity peer, insert it with NULL multi_hash
-			row, sqlErr = queries.Raw("SELECT insert_key($1, NULL)", peerModel.ID).QueryContext(ctx, c.DBH)
-		} else {
-			// If not an identity peer, insert it with NULL peer_id and the multihash
-			row, sqlErr = queries.Raw("SELECT insert_key(NULL, $1)", keyID).QueryContext(ctx, c.DBH)
-		}
-		if sqlErr != nil {
-			fmt.Printf("SQL ERR: %v", sqlErr)
-			return nil, sqlErr
-		}
-		row.Next()
-		err := row.Scan(&key)
-		if err != nil {
-			log.WithError(err).Printf("Could not scan key: < %d >\n", &key)
-		}
-
-		defer func() {
-			if err := row.Close(); err != nil {
-				log.WithError(err).Warnln("Could not close rows")
-			}
-		}()
-	} else {
-		key = keyModel.ID
-	}
-
 	rows, err := queries.Raw("SELECT insert_request($1, $2, $3, $4, $5, $6, $7, $8)",
 		timestamp,
 		requestType,
-		ant,
-		peer,
-		key,
+		antID.String(),
+		peerID.String(),
+		keyID,
 		types.StringArray(maddrStrs),
 		protocolsSetID,
 		agentVersionsID,

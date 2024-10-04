@@ -3,9 +3,10 @@ BEGIN;
 CREATE OR REPLACE FUNCTION insert_request(
     new_timestamp TIMESTAMPTZ,
     new_request_type message_type,
-    new_ant_id INT,
-    new_peer_id INT,
-    new_key_id INT,
+    new_ant TEXT,
+    new_multi_hash TEXT, -- for peer
+    new_key_multi_hash TEXT,
+    -- new_key_id INT,
     new_multi_addresses TEXT[],
     new_protocols_set_id INT,
     new_agent_version_id INT
@@ -13,8 +14,26 @@ CREATE OR REPLACE FUNCTION insert_request(
 $insert_request$
 DECLARE
     new_multi_addresses_ids INT[];
-    new_request_id            INT;
+    new_request_id          INT;
+    new_peer_id             INT;
+    new_ant_id              INT;
+    new_key_id              INT;
 BEGIN
+    SELECT upsert_peer(
+        new_multi_hash,
+        new_agent_version_id,
+        new_protocols_set_id,
+        new_timestamp
+    ) INTO new_peer_id;
+
+    SELECT upsert_peer(
+        new_ant,
+        new_agent_version_id,
+        new_protocols_set_id,
+        new_timestamp
+    ) INTO new_ant_id;
+
+    SELECT insert_key(new_key_multi_hash) INTO new_key_id;
 
     SELECT array_agg(id) FROM upsert_multi_addresses(new_multi_addresses) INTO new_multi_addresses_ids;
 

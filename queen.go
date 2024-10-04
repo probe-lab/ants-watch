@@ -23,6 +23,7 @@ import (
 	"github.com/dennis-tra/nebula-crawler/tele"
 	"github.com/dennis-tra/nebula-crawler/udger"
 	"github.com/probe-lab/ants-watch/db"
+	// "github.com/probe-lab/ants-watch/db/models"
 )
 
 var logger = log.Logger("ants-queen")
@@ -183,6 +184,14 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			// Keep this protocols slice empty for now,
 			// because we don't need it yet and I don't know how to get it
 			protocols := make([]string, 0)
+
+			// requests := make([]models.Request, q.dbc.BatchSize)
+			// for i := range q.dbc.BatchSize {
+			// 	var request models.Request
+			// 	request.Timestamp = log.Timestamp
+			// 	request.RequestType = reqType
+
+			// }
 			q.dbc.PersistRequest(
 				ctx,
 				log.Timestamp,
@@ -201,22 +210,21 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				fmt.Fprintf(f, "\r%s    %s\n", log.Requester, log.Agent)
 				logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
 			}
-			logger.Info("Fetching multi addresses...")
-			dbmaddrs, err := q.dbc.FetchUnresolvedMultiAddresses(ctx, q.resolveBatchSize)
-			if err != nil {
-				logger.Errorf("fetching multi addresses: %v\n", err)
-			}
-			logger.Infof("Fetched %d multi addresses", len(dbmaddrs))
-			if len(dbmaddrs) == 0 {
-				logger.Errorf("Couldn't find multi addresses: %v\n", err)
-			}
+			// logger.Info("Fetching multi addresses...")
+			// dbmaddrs, err := q.dbc.FetchUnresolvedMultiAddresses(ctx, q.resolveBatchSize)
+			// if err != nil {
+			// 	logger.Errorf("fetching multi addresses: %v\n", err)
+			// }
+			// logger.Infof("Fetched %d multi addresses", len(dbmaddrs))
+			// if len(dbmaddrs) == 0 {
+			// 	logger.Errorf("Couldn't find multi addresses: %v\n", err)
+			// }
 
-			if err = db.Resolve(ctx, q.dbc.DBH, q.mmc, q.uclient, dbmaddrs); err != nil {
-				logger.Warnf("Error resolving multi addresses: %v\n", err)
-			}
+			// if err = db.Resolve(ctx, q.dbc.DBH, q.mmc, q.uclient, dbmaddrs); err != nil {
+			// 	logger.Warnf("Error resolving multi addresses: %v\n", err)
+			// }
 
 		case <-ctx.Done():
-			logger.Info("Winding down..")
 		}
 	}
 }
