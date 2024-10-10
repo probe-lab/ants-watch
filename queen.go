@@ -23,6 +23,7 @@ import (
 	"github.com/dennis-tra/nebula-crawler/tele"
 	"github.com/dennis-tra/nebula-crawler/udger"
 	"github.com/probe-lab/ants-watch/db"
+	"github.com/probe-lab/ants-watch/db/models"
 	// "github.com/probe-lab/ants-watch/db/models"
 )
 
@@ -49,6 +50,7 @@ type Queen struct {
 	uclient *udger.Client
 
 	resolveBatchSize int
+	resolveBatchTime int // in sec
 }
 
 func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16) *Queen {
@@ -94,6 +96,24 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		}
 	}
 
+	batchSizeEnvVal := os.Getenv("BATCH_SIZE")
+	if len(batchSizeEnvVal) == 0 {
+		batchSizeEnvVal = "1000"
+	}
+	batchSize, err := strconv.Atoi(batchSizeEnvVal)
+	if err != nil {
+		logger.Errorln("BATCH_SIZE should be an integer")
+	}
+
+	batchTimeEnvVal := os.Getenv("BATCH_SIZE")
+	if len(batchTimeEnvVal) == 0 {
+		batchTimeEnvVal = "30"
+	}
+	batchTime, err := strconv.Atoi(batchTimeEnvVal)
+	if err != nil {
+		logger.Errorln("BATCH_TIME should be an integer")
+	}
+
 	queen := &Queen{
 		nebulaDB:         nebulaDB,
 		keysDB:           keysDB,
@@ -103,7 +123,8 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		dbc:              dbc,
 		mmc:              mmc,
 		uclient:          uclient,
-		resolveBatchSize: 1000,
+		resolveBatchSize: batchSize,
+		resolveBatchTime: batchTime,
 	}
 
 	if nPorts == 0 {
@@ -166,6 +187,11 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 	}
 	defer f.Close()
 
+	requests := make([]models.RequestsDenormalized, 0, q.resolveBatchSize)
+	// bulk insert for every batch size or N seconds, whichever comes first
+	ticker := time.NewTicker(time.Duration(q.resolveBatchTime) * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case log := <-q.antsLogs:
@@ -183,25 +209,24 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 
 			// Keep this protocols slice empty for now,
 			// because we don't need it yet and I don't know how to get it
-			protocols := make([]string, 0)
+			// protocols := make([]string, 0)
 
-			// requests := make([]models.Request, q.dbc.BatchSize)
-			// for i := range q.dbc.BatchSize {
-			// 	var request models.Request
-			// 	request.Timestamp = log.Timestamp
-			// 	request.RequestType = reqType
-
-			// }
-			q.dbc.PersistRequest(
-				ctx,
-				log.Timestamp,
-				reqType,
-				log.Self,               // ant ID
-				log.Requester,          // peer ID
-				log.Target.B58String(), // key ID
-				log.Maddrs,
-				log.Agent,
-				protocols)
+			request := models.RequestsDenormalized{
+				Timestamp:       log.Timestamp,
+				RequestType:     reqType,
+				AntID:           log.Self.String(),
+				PeerID:          log.Requester.String(),
+				KeyID:           log.Target.B58String(),
+				MultiAddressIds: db.MaddrsToAddrs(log.Maddrs),
+			}
+			requests = append(requests, request)
+			if len(requests) >= q.resolveBatchSize {
+				err = db.BulkInsertRequests(q.dbc.Handler, requests)
+				if err != nil {
+					logger.Fatalf("Error inserting requests: %v", err)
+				}
+				requests = requests[:0]
+			}
 			if _, ok := q.seen[log.Requester]; !ok {
 				q.seen[log.Requester] = struct{}{}
 				if strings.Contains(log.Agent, "light") {
@@ -210,21 +235,24 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				fmt.Fprintf(f, "\r%s    %s\n", log.Requester, log.Agent)
 				logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
 			}
-			// logger.Info("Fetching multi addresses...")
-			// dbmaddrs, err := q.dbc.FetchUnresolvedMultiAddresses(ctx, q.resolveBatchSize)
-			// if err != nil {
-			// 	logger.Errorf("fetching multi addresses: %v\n", err)
-			// }
-			// logger.Infof("Fetched %d multi addresses", len(dbmaddrs))
-			// if len(dbmaddrs) == 0 {
-			// 	logger.Errorf("Couldn't find multi addresses: %v\n", err)
-			// }
 
-			// if err = db.Resolve(ctx, q.dbc.DBH, q.mmc, q.uclient, dbmaddrs); err != nil {
-			// 	logger.Warnf("Error resolving multi addresses: %v\n", err)
-			// }
+		case <-ticker.C:
+			if len(requests) > 0 {
+				err = db.BulkInsertRequests(q.dbc.Handler, requests)
+				if err != nil {
+					logger.Fatalf("Error inserting requests: %v", err)
+				}
+				requests = requests[:0]
+			}
 
 		case <-ctx.Done():
+			if len(requests) > 0 {
+				err = db.BulkInsertRequests(q.dbc.Handler, requests)
+				if err != nil {
+					logger.Fatalf("Error inserting remaining requests: %v", err)
+				}
+			}
+			return
 		}
 	}
 }

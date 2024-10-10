@@ -27,7 +27,6 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	lru "github.com/hashicorp/golang-lru"
 	glog "github.com/ipfs/go-log/v2"
-	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
@@ -58,7 +57,7 @@ type DBClient struct {
 	cfg config.Database
 
 	// Database handler
-	DBH *sql.DB
+	Handler *sql.DB
 
 	// protocols cache
 	agentVersions *lru.Cache
@@ -71,9 +70,6 @@ type DBClient struct {
 
 	// Database telemetry
 	telemetry *mt.Telemetry
-
-	Pool      *pgxpool.Pool
-	BatchSize int
 }
 
 func InitDBClient(ctx context.Context, cfg *config.Database) (*DBClient, error) {
@@ -110,18 +106,11 @@ func InitDBClient(ctx context.Context, cfg *config.Database) (*DBClient, error) 
 		return nil, fmt.Errorf("new telemetry: %w", err)
 	}
 
-	pgxPool, err := pgxpool.New(ctx, connString)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create connection pool: %w", err)
-	}
-
 	client := &DBClient{
 		ctx:       ctx,
 		cfg:       *cfg,
-		DBH:       dbh,
 		telemetry: telemetry,
-		Pool:      pgxPool,
-		BatchSize: 1000, // TODO: remove hardcoding
+		Handler:   dbh,
 	}
 	client.applyMigrations(cfg, dbh)
 
@@ -169,14 +158,20 @@ func (c *DBClient) ensurePartitions(ctx context.Context, baseDate time.Time) {
 	upperBound := lowerBound.AddDate(0, 1, 0)
 
 	query := partitionQuery(models.TableNames.PeerLogs, lowerBound, upperBound)
-	if _, err := c.DBH.ExecContext(ctx, query); err != nil {
+	if _, err := c.Handler.ExecContext(ctx, query); err != nil {
 		log.WithError(err).WithField("query", query).Warnln("could not create peer_logs partition")
 	}
 
 	query = partitionQuery(models.TableNames.Requests, lowerBound, upperBound)
-	if _, err := c.DBH.ExecContext(ctx, query); err != nil {
+	if _, err := c.Handler.ExecContext(ctx, query); err != nil {
 		log.WithError(err).WithField("query", query).Warnln("could not create requests partition")
 	}
+
+	query = partitionQuery(models.TableNames.RequestsDenormalized, lowerBound, upperBound)
+	if _, err := c.Handler.ExecContext(ctx, query); err != nil {
+		log.WithError(err).WithField("query", query).Warnln("could not create requests partition")
+	}
+
 }
 
 func partitionQuery(table string, lower time.Time, upper time.Time) string {
@@ -190,7 +185,7 @@ func partitionQuery(table string, lower time.Time, upper time.Time) string {
 	)
 }
 
-func (c *DBClient) applyMigrations(cfg *config.Database, dbh *sql.DB) {
+func (c *DBClient) applyMigrations(cfg *config.Database, Handler *sql.DB) {
 	tmpDir, err := os.MkdirTemp("", "nebula")
 	if err != nil {
 		log.WithError(err).WithField("pattern", "ants-watch").Warnln("Could not create tmp directory for migrations")
@@ -222,7 +217,7 @@ func (c *DBClient) applyMigrations(cfg *config.Database, dbh *sql.DB) {
 	}
 
 	// Apply migrations
-	driver, err := postgres.WithInstance(dbh, &postgres.Config{})
+	driver, err := postgres.WithInstance(Handler, &postgres.Config{})
 	if err != nil {
 		log.WithError(err).Warnln("Could not create driver instance")
 		return
@@ -267,7 +262,7 @@ func (c *DBClient) insertRequest(
 		types.StringArray(maddrStrs),
 		protocolsSetID,
 		agentVersionsID,
-	).QueryContext(ctx, c.DBH)
+	).QueryContext(ctx, c.Handler)
 	if err != nil {
 		fmt.Printf("\n\nERROR $1", err)
 		return nil, err
@@ -428,14 +423,14 @@ func (c *DBClient) PersistRequest(
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		agentVersionID, avidErr = c.GetOrCreateAgentVersionID(ctx, c.DBH, agentVersion)
+		agentVersionID, avidErr = c.GetOrCreateAgentVersionID(ctx, c.Handler, agentVersion)
 		if avidErr != nil && !errors.Is(avidErr, db.ErrEmptyAgentVersion) && !errors.Is(psidErr, context.Canceled) {
 			log.WithError(avidErr).WithField("agentVersion", agentVersion).Warnln("Error getting or creating agent version id")
 		}
 		wg.Done()
 	}()
 	go func() {
-		protocolsSetID, psidErr = c.GetOrCreateProtocolsSetID(ctx, c.DBH, protocols)
+		protocolsSetID, psidErr = c.GetOrCreateProtocolsSetID(ctx, c.Handler, protocols)
 		if psidErr != nil && !errors.Is(psidErr, db.ErrEmptyProtocolsSet) && !errors.Is(psidErr, context.Canceled) {
 			log.WithError(psidErr).WithField("protocols", protocols).Warnln("Error getting or creating protocols set id")
 		}
@@ -500,7 +495,7 @@ func (c *DBClient) fillAgentVersionsCache(ctx context.Context) error {
 		return nil
 	}
 
-	avs, err := models.AgentVersions(qm.Limit(c.cfg.AgentVersionsCacheSize)).All(ctx, c.DBH)
+	avs, err := models.AgentVersions(qm.Limit(c.cfg.AgentVersionsCacheSize)).All(ctx, c.Handler)
 	if err != nil {
 		return err
 	}
@@ -519,7 +514,7 @@ func (c *DBClient) fillProtocolsSetCache(ctx context.Context) error {
 		return nil
 	}
 
-	protSets, err := models.ProtocolsSets(qm.Limit(c.cfg.ProtocolsSetCacheSize)).All(ctx, c.DBH)
+	protSets, err := models.ProtocolsSets(qm.Limit(c.cfg.ProtocolsSetCacheSize)).All(ctx, c.Handler)
 	if err != nil {
 		return err
 	}
@@ -538,7 +533,7 @@ func (c *DBClient) fillProtocolsCache(ctx context.Context) error {
 		return nil
 	}
 
-	prots, err := models.Protocols(qm.Limit(c.cfg.ProtocolsCacheSize)).All(ctx, c.DBH)
+	prots, err := models.Protocols(qm.Limit(c.cfg.ProtocolsCacheSize)).All(ctx, c.Handler)
 	if err != nil {
 		return err
 	}
@@ -553,7 +548,7 @@ func (c *DBClient) fillProtocolsCache(ctx context.Context) error {
 func (c *DBClient) UpsertPeer(mh string, agentVersionID null.Int, protocolSetID null.Int, timestamp time.Time) (int, error) {
 	rows, err := queries.Raw("SELECT upsert_peer($1, $2, $3, $4)",
 		mh, agentVersionID, protocolSetID, timestamp,
-	).Query(c.DBH)
+	).Query(c.Handler)
 	if err != nil {
 		return 0, err
 	}
@@ -582,5 +577,28 @@ func (c *DBClient) FetchUnresolvedMultiAddresses(ctx context.Context, limit int)
 		models.MultiAddressWhere.Resolved.EQ(false),
 		qm.OrderBy(models.MultiAddressColumns.CreatedAt),
 		qm.Limit(limit),
-	).All(ctx, c.DBH)
+	).All(ctx, c.Handler)
+}
+
+func BulkInsertRequests(db *sql.DB, requests []models.RequestsDenormalized) error {
+	valueStrings := []string{}
+	valueArgs := []interface{}{}
+	i := 1
+
+	for _, request := range requests {
+		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d)", i, i+1, i+2, i+3, i+4, i+5))
+		valueArgs = append(valueArgs, request.Timestamp, request.RequestType, request.AntID, request.PeerID, request.KeyID, request.MultiAddressIds)
+		i += 6
+	}
+
+	stmt := fmt.Sprintf("INSERT INTO requests_denormalized (timestamp, request_type, ant_id, peer_id, key_id, multi_address_ids) VALUES %s RETURNING id;",
+		strings.Join(valueStrings, ", "))
+
+	rows, err := db.Query(stmt, valueArgs...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	return nil
 }

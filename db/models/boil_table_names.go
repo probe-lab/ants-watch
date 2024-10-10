@@ -14,6 +14,7 @@ var TableNames = struct {
 	Protocols            string
 	ProtocolsSets        string
 	Requests             string
+	RequestsDenormalized string
 }{
 	AgentVersions:        "agent_versions",
 	IPAddresses:          "ip_addresses",
@@ -25,4 +26,5 @@ var TableNames = struct {
 	Protocols:            "protocols",
 	ProtocolsSets:        "protocols_sets",
 	Requests:             "requests",
+	RequestsDenormalized: "requests_denormalized",
 }
