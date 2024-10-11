@@ -233,10 +233,6 @@ func (c *DBClient) applyMigrations(cfg *config.Database, Handler *sql.DB) {
 	}
 }
 
-// type InsertRequestResult struct {
-// 	PID string
-// }
-
 func (c *DBClient) insertRequest(
 	ctx context.Context,
 	timestamp time.Time,
@@ -596,7 +592,6 @@ func BulkInsertRequests(db *sql.DB, requests []models.RequestsDenormalized) erro
 }
 
 func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) error {
-	// Fetch rows from `requests_denormalized` where `normalized_at` is NULL
 	rows, err := db.Query("SELECT id, timestamp, request_type, ant_id, peer_id, key_id, multi_address_ids, agent_version FROM requests_denormalized WHERE normalized_at IS NULL")
 	if err != nil {
 		return err
