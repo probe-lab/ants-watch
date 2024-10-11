@@ -233,9 +233,9 @@ func (c *DBClient) applyMigrations(cfg *config.Database, Handler *sql.DB) {
 	}
 }
 
-type InsertRequestResult struct {
-	PID string
-}
+// type InsertRequestResult struct {
+// 	PID string
+// }
 
 func (c *DBClient) insertRequest(
 	ctx context.Context,
@@ -247,7 +247,7 @@ func (c *DBClient) insertRequest(
 	maddrs []string,
 	protocolsSetID null.Int,
 	agentVersionsID null.Int,
-) (*InsertRequestResult, error) {
+) (string, error) {
 	start := time.Now()
 
 	rows, err := queries.Raw("SELECT insert_request($1, $2, $3, $4, $5, $6, $7, $8)",
@@ -261,7 +261,7 @@ func (c *DBClient) insertRequest(
 		agentVersionsID,
 	).QueryContext(ctx, c.Handler)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	c.telemetry.InsertRequestHistogram.Record(ctx, time.Since(start).Milliseconds(), metric.WithAttributes(
@@ -275,18 +275,15 @@ func (c *DBClient) insertRequest(
 		}
 	}()
 
-	ivr := InsertRequestResult{
-		PID: peerID,
-	}
 	if !rows.Next() {
-		return &ivr, nil
+		return peerID, nil
 	}
 
-	if err = rows.Scan(&ivr); err != nil {
-		return nil, err
+	if err = rows.Scan(&peerID); err != nil {
+		return "", err
 	}
 
-	return &ivr, nil
+	return peerID, nil
 }
 
 func MaddrsToAddrs(maddrs []ma.Multiaddr) []string {
@@ -409,7 +406,7 @@ func (c *DBClient) PersistRequest(
 	maddrs []string,
 	agentVersion null.String,
 	protocols []string,
-) (*InsertRequestResult, error) {
+) (string, error) {
 	var agentVersionID, protocolsSetID *int
 	var avidErr, psidErr error
 
