@@ -581,12 +581,12 @@ func BulkInsertRequests(db *sql.DB, requests []models.RequestsDenormalized) erro
 	i := 1
 
 	for _, request := range requests {
-		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d)", i, i+1, i+2, i+3, i+4, i+5))
-		valueArgs = append(valueArgs, request.Timestamp, request.RequestType, request.AntID, request.PeerID, request.KeyID, request.MultiAddressIds)
-		i += 6
+		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d)", i, i+1, i+2, i+3, i+4, i+5, i+6))
+		valueArgs = append(valueArgs, request.Timestamp, request.RequestType, request.AntID, request.PeerID, request.KeyID, request.MultiAddressIds, request.AgentVersion)
+		i += 7
 	}
 
-	stmt := fmt.Sprintf("INSERT INTO requests_denormalized (timestamp, request_type, ant_id, peer_id, key_id, multi_address_ids) VALUES %s RETURNING id;",
+	stmt := fmt.Sprintf("INSERT INTO requests_denormalized (timestamp, request_type, ant_id, peer_id, key_id, multi_address_ids, agent_version) VALUES %s RETURNING id;",
 		strings.Join(valueStrings, ", "))
 
 	rows, err := db.Query(stmt, valueArgs...)
@@ -612,11 +612,6 @@ func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) erro
 			return err
 		}
 
-		// Normalize the data by calling insertRequest or similar logic
-		// maddrs, err := AddrsToMaddrs(request.MultiAddressIds)
-		// if err != nil {
-		// 	return fmt.Errorf("failed to transform to maddrs: %w", err)
-		// }
 		_, err = dbClient.PersistRequest(
 			ctx,
 			request.Timestamp,
@@ -632,7 +627,6 @@ func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) erro
 			return fmt.Errorf("failed to normalize request ID %d: %w", request.ID, err)
 		}
 
-		// Update the `normalized_at` field to indicate this row has been normalized
 		_, err = db.Exec("UPDATE requests_denormalized SET normalized_at = NOW() WHERE id = $1", request.ID)
 		if err != nil {
 			return fmt.Errorf("failed to update normalized_at for request ID %d: %w", request.ID, err)
