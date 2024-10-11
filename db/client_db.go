@@ -28,10 +28,8 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 	glog "github.com/ipfs/go-log/v2"
 	_ "github.com/lib/pq"
-	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 
-	// mh "github.com/multiformats/go-multihash"
 	log "github.com/sirupsen/logrus"
 	"github.com/uptrace/opentelemetry-go-extra/otelsql"
 	"github.com/volatiletech/null/v8"
@@ -236,35 +234,33 @@ func (c *DBClient) applyMigrations(cfg *config.Database, Handler *sql.DB) {
 }
 
 type InsertRequestResult struct {
-	PID peer.ID
+	PID string
 }
 
 func (c *DBClient) insertRequest(
 	ctx context.Context,
 	timestamp time.Time,
 	requestType string,
-	antID peer.ID,
-	peerID peer.ID,
+	antID string,
+	peerID string,
 	keyID string,
-	maddrs []ma.Multiaddr,
+	maddrs []string,
 	protocolsSetID null.Int,
 	agentVersionsID null.Int,
 ) (*InsertRequestResult, error) {
-	maddrStrs := MaddrsToAddrs(maddrs)
 	start := time.Now()
 
 	rows, err := queries.Raw("SELECT insert_request($1, $2, $3, $4, $5, $6, $7, $8)",
 		timestamp,
 		requestType,
-		antID.String(),
-		peerID.String(),
+		antID,
+		peerID,
 		keyID,
-		types.StringArray(maddrStrs),
+		types.StringArray(maddrs),
 		protocolsSetID,
 		agentVersionsID,
 	).QueryContext(ctx, c.Handler)
 	if err != nil {
-		fmt.Printf("\n\nERROR $1", err)
 		return nil, err
 	}
 
@@ -272,9 +268,6 @@ func (c *DBClient) insertRequest(
 		attribute.String("type", requestType),
 		attribute.Bool("success", err == nil),
 	))
-	if err != nil {
-		return nil, err
-	}
 
 	defer func() {
 		if err := rows.Close(); err != nil {
@@ -320,7 +313,7 @@ func (c *DBClient) protocolsSetHash(protocolIDs []int64) string {
 
 func (c *DBClient) GetOrCreateProtocolsSetID(ctx context.Context, exec boil.ContextExecutor, protocols []string) (*int, error) {
 	if len(protocols) == 0 {
-		return nil, db.ErrEmptyAgentVersion
+		return nil, db.ErrEmptyProtocolsSet
 	}
 
 	protocolIDs := make([]int64, len(protocols))
@@ -410,20 +403,22 @@ func (c *DBClient) PersistRequest(
 	ctx context.Context,
 	timestamp time.Time,
 	requestType string,
-	antID peer.ID,
-	peerID peer.ID,
+	antID string,
+	peerID string,
 	keyID string,
-	maddrs []ma.Multiaddr,
-	agentVersion string,
+	maddrs []string,
+	agentVersion null.String,
 	protocols []string,
 ) (*InsertRequestResult, error) {
 	var agentVersionID, protocolsSetID *int
 	var avidErr, psidErr error
 
+	agentVersionString := agentVersion.String
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		agentVersionID, avidErr = c.GetOrCreateAgentVersionID(ctx, c.Handler, agentVersion)
+		agentVersionID, avidErr = c.GetOrCreateAgentVersionID(ctx, c.Handler, agentVersionString)
 		if avidErr != nil && !errors.Is(avidErr, db.ErrEmptyAgentVersion) && !errors.Is(psidErr, context.Canceled) {
 			log.WithError(avidErr).WithField("agentVersion", agentVersion).Warnln("Error getting or creating agent version id")
 		}
@@ -601,4 +596,61 @@ func BulkInsertRequests(db *sql.DB, requests []models.RequestsDenormalized) erro
 	defer rows.Close()
 
 	return nil
+}
+
+func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) error {
+	// Fetch rows from `requests_denormalized` where `normalized_at` is NULL
+	rows, err := db.Query("SELECT id, timestamp, request_type, ant_id, peer_id, key_id, multi_address_ids, agent_version FROM requests_denormalized WHERE normalized_at IS NULL")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var request models.RequestsDenormalized
+		if err := rows.Scan(&request.ID, &request.Timestamp, &request.RequestType, &request.AntID, &request.PeerID, &request.KeyID, &request.MultiAddressIds, &request.AgentVersion); err != nil {
+			return err
+		}
+
+		// Normalize the data by calling insertRequest or similar logic
+		// maddrs, err := AddrsToMaddrs(request.MultiAddressIds)
+		// if err != nil {
+		// 	return fmt.Errorf("failed to transform to maddrs: %w", err)
+		// }
+		_, err = dbClient.PersistRequest(
+			ctx,
+			request.Timestamp,
+			request.RequestType,
+			request.AntID,
+			request.PeerID,
+			request.KeyID,
+			request.MultiAddressIds,
+			request.AgentVersion, // agent versions
+			nil,                  // protocol sets
+		)
+		if err != nil {
+			return fmt.Errorf("failed to normalize request ID %d: %w", request.ID, err)
+		}
+
+		// Update the `normalized_at` field to indicate this row has been normalized
+		_, err = db.Exec("UPDATE requests_denormalized SET normalized_at = NOW() WHERE id = $1", request.ID)
+		if err != nil {
+			return fmt.Errorf("failed to update normalized_at for request ID %d: %w", request.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func AddrsToMaddrs(addrs []string) ([]ma.Multiaddr, error) {
+	maddrs := make([]ma.Multiaddr, len(addrs))
+	for i, addr := range addrs {
+		maddr, err := ma.NewMultiaddr(addr)
+		if err != nil {
+			return nil, err
+		}
+		maddrs[i] = maddr
+	}
+
+	return maddrs, nil
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/friendsofgo/errors"
+	"github.com/volatiletech/null/v8"
 	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/sqlboiler/v4/queries"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
@@ -31,6 +32,8 @@ type RequestsDenormalized struct {
 	PeerID          string            `boil:"peer_id" json:"peer_id" toml:"peer_id" yaml:"peer_id"`
 	KeyID           string            `boil:"key_id" json:"key_id" toml:"key_id" yaml:"key_id"`
 	MultiAddressIds types.StringArray `boil:"multi_address_ids" json:"multi_address_ids,omitempty" toml:"multi_address_ids" yaml:"multi_address_ids,omitempty"`
+	AgentVersion    null.String       `boil:"agent_version" json:"agent_version,omitempty" toml:"agent_version" yaml:"agent_version,omitempty"`
+	NormalizedAt    null.Time         `boil:"normalized_at" json:"normalized_at,omitempty" toml:"normalized_at" yaml:"normalized_at,omitempty"`
 
 	R *requestsDenormalizedR `boil:"-" json:"-" toml:"-" yaml:"-"`
 	L requestsDenormalizedL  `boil:"-" json:"-" toml:"-" yaml:"-"`
@@ -44,6 +47,8 @@ var RequestsDenormalizedColumns = struct {
 	PeerID          string
 	KeyID           string
 	MultiAddressIds string
+	AgentVersion    string
+	NormalizedAt    string
 }{
 	ID:              "id",
 	Timestamp:       "timestamp",
@@ -52,6 +57,8 @@ var RequestsDenormalizedColumns = struct {
 	PeerID:          "peer_id",
 	KeyID:           "key_id",
 	MultiAddressIds: "multi_address_ids",
+	AgentVersion:    "agent_version",
+	NormalizedAt:    "normalized_at",
 }
 
 var RequestsDenormalizedTableColumns = struct {
@@ -62,6 +69,8 @@ var RequestsDenormalizedTableColumns = struct {
 	PeerID          string
 	KeyID           string
 	MultiAddressIds string
+	AgentVersion    string
+	NormalizedAt    string
 }{
 	ID:              "requests_denormalized.id",
 	Timestamp:       "requests_denormalized.timestamp",
@@ -70,6 +79,8 @@ var RequestsDenormalizedTableColumns = struct {
 	PeerID:          "requests_denormalized.peer_id",
 	KeyID:           "requests_denormalized.key_id",
 	MultiAddressIds: "requests_denormalized.multi_address_ids",
+	AgentVersion:    "requests_denormalized.agent_version",
+	NormalizedAt:    "requests_denormalized.normalized_at",
 }
 
 // Generated where
@@ -100,6 +111,30 @@ func (w whereHelpertypes_StringArray) IsNotNull() qm.QueryMod {
 	return qmhelper.WhereIsNotNull(w.field)
 }
 
+type whereHelpernull_Time struct{ field string }
+
+func (w whereHelpernull_Time) EQ(x null.Time) qm.QueryMod {
+	return qmhelper.WhereNullEQ(w.field, false, x)
+}
+func (w whereHelpernull_Time) NEQ(x null.Time) qm.QueryMod {
+	return qmhelper.WhereNullEQ(w.field, true, x)
+}
+func (w whereHelpernull_Time) LT(x null.Time) qm.QueryMod {
+	return qmhelper.Where(w.field, qmhelper.LT, x)
+}
+func (w whereHelpernull_Time) LTE(x null.Time) qm.QueryMod {
+	return qmhelper.Where(w.field, qmhelper.LTE, x)
+}
+func (w whereHelpernull_Time) GT(x null.Time) qm.QueryMod {
+	return qmhelper.Where(w.field, qmhelper.GT, x)
+}
+func (w whereHelpernull_Time) GTE(x null.Time) qm.QueryMod {
+	return qmhelper.Where(w.field, qmhelper.GTE, x)
+}
+
+func (w whereHelpernull_Time) IsNull() qm.QueryMod    { return qmhelper.WhereIsNull(w.field) }
+func (w whereHelpernull_Time) IsNotNull() qm.QueryMod { return qmhelper.WhereIsNotNull(w.field) }
+
 var RequestsDenormalizedWhere = struct {
 	ID              whereHelperint
 	Timestamp       whereHelpertime_Time
@@ -108,6 +143,8 @@ var RequestsDenormalizedWhere = struct {
 	PeerID          whereHelperstring
 	KeyID           whereHelperstring
 	MultiAddressIds whereHelpertypes_StringArray
+	AgentVersion    whereHelpernull_String
+	NormalizedAt    whereHelpernull_Time
 }{
 	ID:              whereHelperint{field: "\"requests_denormalized\".\"id\""},
 	Timestamp:       whereHelpertime_Time{field: "\"requests_denormalized\".\"timestamp\""},
@@ -116,6 +153,8 @@ var RequestsDenormalizedWhere = struct {
 	PeerID:          whereHelperstring{field: "\"requests_denormalized\".\"peer_id\""},
 	KeyID:           whereHelperstring{field: "\"requests_denormalized\".\"key_id\""},
 	MultiAddressIds: whereHelpertypes_StringArray{field: "\"requests_denormalized\".\"multi_address_ids\""},
+	AgentVersion:    whereHelpernull_String{field: "\"requests_denormalized\".\"agent_version\""},
+	NormalizedAt:    whereHelpernull_Time{field: "\"requests_denormalized\".\"normalized_at\""},
 }
 
 // RequestsDenormalizedRels is where relationship names are stored.
@@ -135,9 +174,9 @@ func (*requestsDenormalizedR) NewStruct() *requestsDenormalizedR {
 type requestsDenormalizedL struct{}
 
 var (
-	requestsDenormalizedAllColumns            = []string{"id", "timestamp", "request_type", "ant_id", "peer_id", "key_id", "multi_address_ids"}
+	requestsDenormalizedAllColumns            = []string{"id", "timestamp", "request_type", "ant_id", "peer_id", "key_id", "multi_address_ids", "agent_version", "normalized_at"}
 	requestsDenormalizedColumnsWithoutDefault = []string{"timestamp", "request_type", "ant_id", "peer_id", "key_id"}
-	requestsDenormalizedColumnsWithDefault    = []string{"id", "multi_address_ids"}
+	requestsDenormalizedColumnsWithDefault    = []string{"id", "multi_address_ids", "agent_version", "normalized_at"}
 	requestsDenormalizedPrimaryKeyColumns     = []string{"id", "timestamp"}
 	requestsDenormalizedGeneratedColumns      = []string{"id"}
 )

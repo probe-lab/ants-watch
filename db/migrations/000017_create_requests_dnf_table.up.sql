@@ -17,6 +17,10 @@ CREATE TABLE requests_denormalized
     -- An array of all multi address IDs of the remote peer.
     multi_address_ids TEXT[],
 
+    agent_version TEXT,
+
+    normalized_at TIMESTAMPTZ,
+
     PRIMARY KEY (id, timestamp)
 ) PARTITION BY RANGE (timestamp);
 

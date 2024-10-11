@@ -56,7 +56,7 @@ CREATE TABLE peers
     created_at       TIMESTAMPTZ NOT NULL,
 
     -- When was the peer seen for the last time
-    last_seen_at       TIMESTAMPTZ NOT NULL CHECK ( last_seen_at >= updated_at ),
+    last_seen_at    TIMESTAMPTZ NOT NULL CHECK ( last_seen_at >= updated_at ),
 
     CONSTRAINT fk_peers_agent_version_id FOREIGN KEY (agent_version_id) REFERENCES agent_versions (id) ON DELETE SET NULL,
     CONSTRAINT fk_peers_protocols_set_id FOREIGN KEY (protocols_set_id) REFERENCES protocols_sets (id) ON DELETE SET NULL,

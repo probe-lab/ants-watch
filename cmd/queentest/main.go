@@ -47,9 +47,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/probe-lab/ants-watch"
+	"github.com/probe-lab/ants-watch/db"
 )
 
 var logger = logging.Logger("ants-queen")
@@ -78,6 +80,32 @@ func main() {
 	}
 
 	go queen.Run(ctx)
+
+	go func() {
+		nctx, ncancel := context.WithCancel(context.Background())
+		defer ncancel()
+
+		logger.Info("Starting continuous normalization...")
+
+		for {
+			select {
+			case <-nctx.Done():
+				logger.Info("Normalization context canceled, stopping normalization loop.")
+				return
+			default:
+				err := db.NormalizeRequests(nctx, queen.Client.Handler, queen.Client)
+				if err != nil {
+
+					logger.Errorf("Error during normalization: %w", err)
+				} else {
+					logger.Info("Normalization completed for current batch.")
+				}
+
+				// TODO: remove the hardcoded time
+				time.Sleep(10 * time.Second)
+			}
+		}
+	}()
 
 	go func() {
 		sig := <-sigChan

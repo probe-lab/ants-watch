@@ -18,13 +18,13 @@ import (
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 	"github.com/probe-lab/go-libdht/kad/trie"
+	"github.com/volatiletech/null/v8"
 
 	"github.com/dennis-tra/nebula-crawler/maxmind"
 	"github.com/dennis-tra/nebula-crawler/tele"
 	"github.com/dennis-tra/nebula-crawler/udger"
 	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/ants-watch/db/models"
-	// "github.com/probe-lab/ants-watch/db/models"
 )
 
 var logger = log.Logger("ants-queen")
@@ -51,6 +51,8 @@ type Queen struct {
 
 	resolveBatchSize int
 	resolveBatchTime int // in sec
+
+	Client *db.DBClient
 }
 
 func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16) *Queen {
@@ -125,6 +127,7 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		uclient:          uclient,
 		resolveBatchSize: batchSize,
 		resolveBatchTime: batchTime,
+		Client:           dbc,
 	}
 
 	if nPorts == 0 {
@@ -218,6 +221,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				PeerID:          log.Requester.String(),
 				KeyID:           log.Target.B58String(),
 				MultiAddressIds: db.MaddrsToAddrs(log.Maddrs),
+				AgentVersion:    null.StringFrom(log.Agent),
 			}
 			requests = append(requests, request)
 			if len(requests) >= q.resolveBatchSize {
