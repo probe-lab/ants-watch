@@ -6,7 +6,7 @@ BEGIN;
 CREATE TABLE peers_x_multi_addresses
 (
     -- The peer ID of which we want to track the multi address
-    peer_id          INT NOT NULL,
+    peer_id          BIGINT NOT NULL,
     -- The ID of the multi address that has been seen for the above peer
     multi_address_id INT NOT NULL,
 

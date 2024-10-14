@@ -37,7 +37,7 @@ COMMENT ON COLUMN protocols_sets.hash IS 'The hash digest of the sorted protocol
 CREATE TABLE peers
 (
     -- The peer ID as a database-friendly integer
-    id               INT GENERATED ALWAYS AS IDENTITY,
+    id               BIGINT GENERATED ALWAYS AS IDENTITY,
 
 -- The current agent version of the peer (updated if changed).
     agent_version_id INT,

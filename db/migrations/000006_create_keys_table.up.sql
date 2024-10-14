@@ -4,7 +4,7 @@ CREATE TABLE keys
 (
     id               INT GENERATED ALWAYS AS IDENTITY,
     -- Use peer ID for keys that are also peers
-    peer_id          INT,
+    peer_id          BIGINT,
     -- The peer ID in the form of Qm... or 12D3...
     multi_hash       TEXT UNIQUE,
 

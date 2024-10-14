@@ -533,10 +533,31 @@ func (c *DBClient) fillProtocolsCache(ctx context.Context) error {
 	return nil
 }
 
-func (c *DBClient) UpsertPeer(mh string, agentVersionID null.Int, protocolSetID null.Int, timestamp time.Time) (int, error) {
+func (c *DBClient) UpsertPeer(ctx context.Context, mh string, agentVersion null.String, protocols []string, timestamp time.Time) (int, error) {
+	var agentVersionID, protocolsSetID *int
+	var avidErr, psidErr error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		agentVersionID, avidErr = c.GetOrCreateAgentVersionID(ctx, c.Handler, agentVersion.String)
+		if avidErr != nil && !errors.Is(avidErr, db.ErrEmptyAgentVersion) && !errors.Is(psidErr, context.Canceled) {
+			log.WithError(avidErr).WithField("agentVersion", agentVersion).Warnln("Error getting or creating agent version id")
+		}
+		wg.Done()
+	}()
+	go func() {
+		protocolsSetID, psidErr = c.GetOrCreateProtocolsSetID(ctx, c.Handler, protocols)
+		if psidErr != nil && !errors.Is(psidErr, db.ErrEmptyProtocolsSet) && !errors.Is(psidErr, context.Canceled) {
+			log.WithError(psidErr).WithField("protocols", protocols).Warnln("Error getting or creating protocols set id")
+		}
+		wg.Done()
+	}()
+	wg.Wait()
+
 	rows, err := queries.Raw("SELECT upsert_peer($1, $2, $3, $4)",
-		mh, agentVersionID, protocolSetID, timestamp,
-	).Query(c.Handler)
+		mh, agentVersionID, protocolsSetID, timestamp,
+	).QueryContext(ctx, c.Handler)
 	if err != nil {
 		return 0, err
 	}

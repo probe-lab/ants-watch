@@ -24,7 +24,7 @@ import (
 // PeerLog is an object representing the database table.
 type PeerLog struct {
 	ID        int       `boil:"id" json:"id" toml:"id" yaml:"id"`
-	PeerID    int       `boil:"peer_id" json:"peer_id" toml:"peer_id" yaml:"peer_id"`
+	PeerID    int64     `boil:"peer_id" json:"peer_id" toml:"peer_id" yaml:"peer_id"`
 	Field     string    `boil:"field" json:"field" toml:"field" yaml:"field"`
 	Old       string    `boil:"old" json:"old" toml:"old" yaml:"old"`
 	New       string    `boil:"new" json:"new" toml:"new" yaml:"new"`
@@ -68,16 +68,39 @@ var PeerLogTableColumns = struct {
 
 // Generated where
 
+type whereHelperint64 struct{ field string }
+
+func (w whereHelperint64) EQ(x int64) qm.QueryMod  { return qmhelper.Where(w.field, qmhelper.EQ, x) }
+func (w whereHelperint64) NEQ(x int64) qm.QueryMod { return qmhelper.Where(w.field, qmhelper.NEQ, x) }
+func (w whereHelperint64) LT(x int64) qm.QueryMod  { return qmhelper.Where(w.field, qmhelper.LT, x) }
+func (w whereHelperint64) LTE(x int64) qm.QueryMod { return qmhelper.Where(w.field, qmhelper.LTE, x) }
+func (w whereHelperint64) GT(x int64) qm.QueryMod  { return qmhelper.Where(w.field, qmhelper.GT, x) }
+func (w whereHelperint64) GTE(x int64) qm.QueryMod { return qmhelper.Where(w.field, qmhelper.GTE, x) }
+func (w whereHelperint64) IN(slice []int64) qm.QueryMod {
+	values := make([]interface{}, 0, len(slice))
+	for _, value := range slice {
+		values = append(values, value)
+	}
+	return qm.WhereIn(fmt.Sprintf("%s IN ?", w.field), values...)
+}
+func (w whereHelperint64) NIN(slice []int64) qm.QueryMod {
+	values := make([]interface{}, 0, len(slice))
+	for _, value := range slice {
+		values = append(values, value)
+	}
+	return qm.WhereNotIn(fmt.Sprintf("%s NOT IN ?", w.field), values...)
+}
+
 var PeerLogWhere = struct {
 	ID        whereHelperint
-	PeerID    whereHelperint
+	PeerID    whereHelperint64
 	Field     whereHelperstring
 	Old       whereHelperstring
 	New       whereHelperstring
 	CreatedAt whereHelpertime_Time
 }{
 	ID:        whereHelperint{field: "\"peer_logs\".\"id\""},
-	PeerID:    whereHelperint{field: "\"peer_logs\".\"peer_id\""},
+	PeerID:    whereHelperint64{field: "\"peer_logs\".\"peer_id\""},
 	Field:     whereHelperstring{field: "\"peer_logs\".\"field\""},
 	Old:       whereHelperstring{field: "\"peer_logs\".\"old\""},
 	New:       whereHelperstring{field: "\"peer_logs\".\"new\""},

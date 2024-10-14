@@ -22,9 +22,9 @@ CREATE TABLE requests
     -- The message type of this request
     request_type    message_type NOT NULL,
     -- Peer ID of the ant doing the request,
-    ant_id         INT NOT NULL,
+    ant_id          INT NOT NULL,
     -- The peer related to this request
-    peer_id         INT NOT NULL,
+    peer_id         BIGINT NOT NULL,
     -- The key ID of this request (?)
     key_id          INT NOT NULL,
     -- An array of all multi address IDs of the remote peer.

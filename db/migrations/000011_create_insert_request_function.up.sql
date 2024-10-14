@@ -6,7 +6,6 @@ CREATE OR REPLACE FUNCTION insert_request(
     new_ant TEXT,
     new_multi_hash TEXT, -- for peer
     new_key_multi_hash TEXT,
-    -- new_key_id INT,
     new_multi_addresses TEXT[],
     new_protocols_set_id INT,
     new_agent_version_id INT
@@ -26,12 +25,9 @@ BEGIN
         new_timestamp
     ) INTO new_peer_id;
 
-    SELECT upsert_peer(
-        new_ant,
-        new_agent_version_id,
-        new_protocols_set_id,
-        new_timestamp
-    ) INTO new_ant_id;
+    SELECT id INTO new_ant_id
+    FROM peers
+    WHERE multi_hash = new_ant;
 
     SELECT insert_key(new_key_multi_hash) INTO new_key_id;
 

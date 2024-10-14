@@ -28,7 +28,7 @@ type Request struct {
 	Timestamp       time.Time        `boil:"timestamp" json:"timestamp" toml:"timestamp" yaml:"timestamp"`
 	RequestType     string           `boil:"request_type" json:"request_type" toml:"request_type" yaml:"request_type"`
 	AntID           int              `boil:"ant_id" json:"ant_id" toml:"ant_id" yaml:"ant_id"`
-	PeerID          int              `boil:"peer_id" json:"peer_id" toml:"peer_id" yaml:"peer_id"`
+	PeerID          int64            `boil:"peer_id" json:"peer_id" toml:"peer_id" yaml:"peer_id"`
 	KeyID           int              `boil:"key_id" json:"key_id" toml:"key_id" yaml:"key_id"`
 	MultiAddressIds types.Int64Array `boil:"multi_address_ids" json:"multi_address_ids,omitempty" toml:"multi_address_ids" yaml:"multi_address_ids,omitempty"`
 
@@ -82,7 +82,7 @@ var RequestWhere = struct {
 	Timestamp       whereHelpertime_Time
 	RequestType     whereHelperstring
 	AntID           whereHelperint
-	PeerID          whereHelperint
+	PeerID          whereHelperint64
 	KeyID           whereHelperint
 	MultiAddressIds whereHelpertypes_Int64Array
 }{
@@ -90,7 +90,7 @@ var RequestWhere = struct {
 	Timestamp:       whereHelpertime_Time{field: "\"requests\".\"timestamp\""},
 	RequestType:     whereHelperstring{field: "\"requests\".\"request_type\""},
 	AntID:           whereHelperint{field: "\"requests\".\"ant_id\""},
-	PeerID:          whereHelperint{field: "\"requests\".\"peer_id\""},
+	PeerID:          whereHelperint64{field: "\"requests\".\"peer_id\""},
 	KeyID:           whereHelperint{field: "\"requests\".\"key_id\""},
 	MultiAddressIds: whereHelpertypes_Int64Array{field: "\"requests\".\"multi_address_ids\""},
 }

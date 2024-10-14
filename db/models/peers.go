@@ -24,7 +24,7 @@ import (
 
 // Peer is an object representing the database table.
 type Peer struct {
-	ID             int       `boil:"id" json:"id" toml:"id" yaml:"id"`
+	ID             int64     `boil:"id" json:"id" toml:"id" yaml:"id"`
 	AgentVersionID null.Int  `boil:"agent_version_id" json:"agent_version_id,omitempty" toml:"agent_version_id" yaml:"agent_version_id,omitempty"`
 	ProtocolsSetID null.Int  `boil:"protocols_set_id" json:"protocols_set_id,omitempty" toml:"protocols_set_id" yaml:"protocols_set_id,omitempty"`
 	MultiHash      string    `boil:"multi_hash" json:"multi_hash" toml:"multi_hash" yaml:"multi_hash"`
@@ -75,7 +75,7 @@ var PeerTableColumns = struct {
 // Generated where
 
 var PeerWhere = struct {
-	ID             whereHelperint
+	ID             whereHelperint64
 	AgentVersionID whereHelpernull_Int
 	ProtocolsSetID whereHelpernull_Int
 	MultiHash      whereHelperstring
@@ -83,7 +83,7 @@ var PeerWhere = struct {
 	CreatedAt      whereHelpertime_Time
 	LastSeenAt     whereHelpertime_Time
 }{
-	ID:             whereHelperint{field: "\"peers\".\"id\""},
+	ID:             whereHelperint64{field: "\"peers\".\"id\""},
 	AgentVersionID: whereHelpernull_Int{field: "\"peers\".\"agent_version_id\""},
 	ProtocolsSetID: whereHelpernull_Int{field: "\"peers\".\"protocols_set_id\""},
 	MultiHash:      whereHelperstring{field: "\"peers\".\"multi_hash\""},
@@ -920,10 +920,10 @@ func (peerL) LoadMultiAddresses(ctx context.Context, e boil.ContextExecutor, sin
 
 	var resultSlice []*MultiAddress
 
-	var localJoinCols []int
+	var localJoinCols []int64
 	for results.Next() {
 		one := new(MultiAddress)
-		var localJoinCol int
+		var localJoinCol int64
 
 		err = results.Scan(&one.ID, &one.Asn, &one.IsCloud, &one.IsRelay, &one.IsPublic, &one.Addr, &one.HasManyAddrs, &one.Resolved, &one.Country, &one.Continent, &one.Maddr, &one.UpdatedAt, &one.CreatedAt, &localJoinCol)
 		if err != nil {
@@ -1424,7 +1424,7 @@ func Peers(mods ...qm.QueryMod) peerQuery {
 
 // FindPeer retrieves a single record by ID with an executor.
 // If selectCols is empty Find will return all columns.
-func FindPeer(ctx context.Context, exec boil.ContextExecutor, iD int, selectCols ...string) (*Peer, error) {
+func FindPeer(ctx context.Context, exec boil.ContextExecutor, iD int64, selectCols ...string) (*Peer, error) {
 	peerObj := &Peer{}
 
 	sel := "*"
@@ -1952,7 +1952,7 @@ func (o *PeerSlice) ReloadAll(ctx context.Context, exec boil.ContextExecutor) er
 }
 
 // PeerExists checks if the Peer row exists.
-func PeerExists(ctx context.Context, exec boil.ContextExecutor, iD int) (bool, error) {
+func PeerExists(ctx context.Context, exec boil.ContextExecutor, iD int64) (bool, error) {
 	var exists bool
 	sql := "select exists(select 1 from \"peers\" where \"id\"=$1 limit 1)"
 

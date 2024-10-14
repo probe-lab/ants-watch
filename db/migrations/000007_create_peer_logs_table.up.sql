@@ -3,7 +3,7 @@ BEGIN;
 CREATE TABLE peer_logs
 (
     id         INT GENERATED ALWAYS AS IDENTITY,
-    peer_id    INT         NOT NULL,
+    peer_id    BIGINT      NOT NULL,
     field      TEXT        NOT NULL,
     old        TEXT        NOT NULL,
     new        TEXT        NOT NULL,

@@ -173,7 +173,6 @@ func (q *Queen) Run(ctx context.Context) {
 	for {
 		select {
 		case <-t.C:
-			// crawl
 			q.routine(cctx)
 		case <-ctx.Done():
 			return
@@ -185,8 +184,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 	lnCount := 0
 	f, err := os.OpenFile("log.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		// TODO: improve this
-		panic(err)
+		logger.Panicln(err)
 	}
 	defer f.Close()
 
@@ -318,7 +316,7 @@ func (q *Queen) routine(ctx context.Context) {
 	for _, key := range privKeys {
 		port, err := q.takeAvailablePort()
 		if err != nil {
-			logger.Error("trying to spwan new ant: ")
+			logger.Error("trying to spawn new ant: ")
 			continue
 		}
 		ant, err := SpawnAnt(ctx, key, port, q.antsLogs)
@@ -326,6 +324,14 @@ func (q *Queen) routine(ctx context.Context) {
 			logger.Warn("error creating ant", err)
 		}
 		q.ants = append(q.ants, ant)
+	}
+
+	for _, ant := range q.ants {
+		logger.Debugf("Upserting ant: %v\n", ant.PeerID.String())
+		antID, err := q.Client.UpsertPeer(ctx, ant.PeerID.String(), null.StringFrom(ant.UserAgent), nil, time.Now())
+		if err != nil {
+			logger.Errorf("antID: %d could not be inserted because of %v", antID, err)
+		}
 	}
 
 	logger.Debugf("ants count: %d", len(q.ants))
