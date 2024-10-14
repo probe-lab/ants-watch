@@ -41,7 +41,7 @@ func main() {
 	go queen.Run(ctx)
 
 	go func() {
-		nctx, ncancel := context.WithCancel(context.Background())
+		nctx, ncancel := context.WithCancel(ctx)
 		defer ncancel()
 
 		logger.Info("Starting continuous normalization...")
