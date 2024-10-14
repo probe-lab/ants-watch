@@ -48,7 +48,7 @@ CREATE TABLE peers
     -- The peer ID in the form of Qm... or 12D3...
     multi_hash       TEXT        NOT NULL CHECK ( TRIM(multi_hash) != '' ),
 
-    -- When were the multi addresses updated the last time.
+    -- When was the peer updated the last time.
     updated_at       TIMESTAMPTZ NOT NULL CHECK ( updated_at >= created_at ),
     -- When was this peer instance created.
     -- This gives a pretty accurate idea of
