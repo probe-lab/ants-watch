@@ -10,7 +10,7 @@ DECLARE
 BEGIN
     SELECT id INTO key_model_id FROM keys k WHERE k.multi_hash = key_multi_hash;
 
-    IF key_model_ID IS NULL THEN
+    IF key_model_id IS NULL THEN
         SELECT id INTO key_peer_id FROM peers p WHERE p.multi_hash = key_multi_hash;
 
         IF key_peer_id IS NOT NULL THEN
