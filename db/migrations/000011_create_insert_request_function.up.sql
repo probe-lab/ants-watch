@@ -7,8 +7,8 @@ CREATE OR REPLACE FUNCTION insert_request(
     new_multi_hash TEXT, -- for peer
     new_key_multi_hash TEXT,
     new_multi_addresses TEXT[],
-    new_protocols_set_id INT,
-    new_agent_version_id INT
+    new_agent_version_id INT,
+    new_protocols_set_id INT
 ) RETURNS RECORD AS
 $insert_request$
 DECLARE
@@ -22,6 +22,7 @@ BEGIN
         new_multi_hash,
         new_agent_version_id,
         new_protocols_set_id,
+        new_timestamp,
         new_timestamp
     ) INTO new_peer_id;
 

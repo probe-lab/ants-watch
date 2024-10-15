@@ -253,8 +253,8 @@ func (c *DBClient) insertRequest(
 		peerID,
 		keyID,
 		types.StringArray(maddrs),
-		protocolsSetID,
 		agentVersionsID,
+		protocolsSetID,
 	).QueryContext(ctx, c.Handler)
 	if err != nil {
 		return "", err
@@ -637,7 +637,7 @@ func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) erro
 			nil,                  // protocol sets
 		)
 		if err != nil {
-			return fmt.Errorf("failed to normalize request ID %d: %w", request.ID, err)
+			return fmt.Errorf("failed to normalize request ID %d: %w, timestamp: %v", request.ID, err, request.RequestStartedAt)
 		}
 
 		_, err = db.Exec("UPDATE requests_denormalized SET normalized_at = NOW() WHERE id = $1", request.ID)

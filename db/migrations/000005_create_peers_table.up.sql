@@ -50,13 +50,14 @@ CREATE TABLE peers
 
     -- When was the peer updated the last time.
     updated_at       TIMESTAMPTZ NOT NULL CHECK ( updated_at >= created_at ),
+
     -- When was this peer instance created.
     -- This gives a pretty accurate idea of
     -- when this peer was seen the first time.
     created_at       TIMESTAMPTZ NOT NULL,
 
     -- When was the peer seen for the last time
-    last_seen_at    TIMESTAMPTZ NOT NULL CHECK ( last_seen_at >= updated_at ),
+    last_seen_at    TIMESTAMPTZ NOT NULL CHECK ( last_seen_at >= created_at ),
 
     CONSTRAINT fk_peers_agent_version_id FOREIGN KEY (agent_version_id) REFERENCES agent_versions (id) ON DELETE SET NULL,
     CONSTRAINT fk_peers_protocols_set_id FOREIGN KEY (protocols_set_id) REFERENCES protocols_sets (id) ON DELETE SET NULL,
