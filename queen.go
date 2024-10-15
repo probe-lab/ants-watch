@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dennis-tra/nebula-crawler/config"
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
-	"github.com/dennis-tra/nebula-crawler/config"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/antslog"
 	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
@@ -130,8 +130,8 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 	queen := &Queen{
 		nebulaDB:         nebulaDB,
 		keysDB:           keysDB,
-		peerstore: peerstore,
-		datastore: dssync.MutexWrap(ds.NewMapDatastore()),
+		peerstore:        peerstore,
+		datastore:        dssync.MutexWrap(ds.NewMapDatastore()),
 		ants:             []*Ant{},
 		antsLogs:         make(chan antslog.RequestLog, 1024),
 		seen:             make(map[peer.ID]struct{}),
@@ -249,7 +249,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			}
 			if _, ok := q.seen[log.Requester]; !ok {
 				q.seen[log.Requester] = struct{}{}
-				if strings.Contains(log.Agent, "light") {
+				if strings.Contains(agent, "light") {
 					lnCount++
 				}
 				fmt.Fprintf(f, "\r%s    %s\n", log.Requester, agent)

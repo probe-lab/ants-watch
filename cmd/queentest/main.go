@@ -58,7 +58,6 @@ func main() {
 			default:
 				err := db.NormalizeRequests(nctx, queen.Client.Handler, queen.Client)
 				if err != nil {
-
 					logger.Errorf("Error during normalization: %w", err)
 				} else {
 					logger.Info("Normalization completed for current batch.")
