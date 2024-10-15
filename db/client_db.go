@@ -589,7 +589,7 @@ func (c *DBClient) FetchUnresolvedMultiAddresses(ctx context.Context, limit int)
 	).All(ctx, c.Handler)
 }
 
-func BulkInsertRequests(db *sql.DB, requests []models.RequestsDenormalized) error {
+func BulkInsertRequests(ctx context.Context, db *sql.DB, requests []models.RequestsDenormalized) error {
 	valueStrings := []string{}
 	valueArgs := []interface{}{}
 	i := 1
@@ -603,7 +603,7 @@ func BulkInsertRequests(db *sql.DB, requests []models.RequestsDenormalized) erro
 	stmt := fmt.Sprintf("INSERT INTO requests_denormalized (request_started_at, request_type, ant_multihash, peer_multihash, key_multihash, multi_addresses, agent_version) VALUES %s RETURNING id;",
 		strings.Join(valueStrings, ", "))
 
-	rows, err := db.Query(stmt, valueArgs...)
+	rows, err := queries.Raw(stmt, valueArgs...).QueryContext(ctx, db)
 	if err != nil {
 		return err
 	}

@@ -163,17 +163,14 @@ func (q *Queen) freePort(port uint16) {
 }
 
 func (q *Queen) Run(ctx context.Context) {
-	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-
-	go q.consumeAntsLogs(cctx)
+	go q.consumeAntsLogs(ctx)
 	t := time.NewTicker(CRAWL_INTERVAL)
 	q.routine(ctx)
 
 	for {
 		select {
 		case <-t.C:
-			q.routine(cctx)
+			q.routine(ctx)
 		case <-ctx.Done():
 			return
 		}
@@ -223,7 +220,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			}
 			requests = append(requests, request)
 			if len(requests) >= q.resolveBatchSize {
-				err = db.BulkInsertRequests(q.dbc.Handler, requests)
+				err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
 				if err != nil {
 					logger.Fatalf("Error inserting requests: %v", err)
 				}
@@ -240,7 +237,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 
 		case <-ticker.C:
 			if len(requests) > 0 {
-				err = db.BulkInsertRequests(q.dbc.Handler, requests)
+				err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
 				if err != nil {
 					logger.Fatalf("Error inserting requests: %v", err)
 				}
@@ -249,7 +246,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 
 		case <-ctx.Done():
 			if len(requests) > 0 {
-				err = db.BulkInsertRequests(q.dbc.Handler, requests)
+				err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
 				if err != nil {
 					logger.Fatalf("Error inserting remaining requests: %v", err)
 				}
