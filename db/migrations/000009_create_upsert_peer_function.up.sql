@@ -17,6 +17,7 @@ $upsert_peer$
                 protocols_set_id = COALESCE(EXCLUDED.protocols_set_id, p.protocols_set_id),
                 updated_at       = EXCLUDED.updated_at,
                 last_seen_at     = EXCLUDED.last_seen_at
+        WHERE EXCLUDED.updated_at >= p.created_at
         RETURNING id, multi_hash
     )
     SELECT id FROM ups;
