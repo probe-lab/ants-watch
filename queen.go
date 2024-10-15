@@ -49,7 +49,7 @@ type Queen struct {
 	portsOccupancy []bool
 	firstPort      uint16
 
-	Client  *db.DBClient
+	dbc     *db.DBClient
 	mmc     *maxmind.Client
 	uclient *udger.Client
 
@@ -78,7 +78,7 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		ants:             []*Ant{},
 		antsLogs:         make(chan antslog.RequestLog, 1024),
 		upnp:             true,
-		Client:           getDbClient(ctx),
+		dbc:              getDbClient(ctx),
 		mmc:              mmc,
 		uclient:          getUdgerClient(),
 		resolveBatchSize: getBatchSize(),
@@ -183,6 +183,8 @@ func (q *Queen) freePort(port uint16) {
 
 func (q *Queen) Run(ctx context.Context) {
 	go q.consumeAntsLogs(ctx)
+	go q.normalizeRequests(ctx)
+
 	t := time.NewTicker(CRAWL_INTERVAL)
 	q.routine(ctx)
 
@@ -227,7 +229,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			}
 			requests = append(requests, request)
 			if len(requests) >= q.resolveBatchSize {
-				err = db.BulkInsertRequests(ctx, q.Client.Handler, requests)
+				err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
 				if err != nil {
 					logger.Fatalf("Error inserting requests: %v", err)
 				}
@@ -236,7 +238,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 
 		case <-ticker.C:
 			if len(requests) > 0 {
-				err := db.BulkInsertRequests(ctx, q.Client.Handler, requests)
+				err := db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
 				if err != nil {
 					logger.Fatalf("Error inserting requests: %v", err)
 				}
@@ -245,12 +247,34 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 
 		case <-ctx.Done():
 			if len(requests) > 0 {
-				err := db.BulkInsertRequests(ctx, q.Client.Handler, requests)
+				err := db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
 				if err != nil {
 					logger.Fatalf("Error inserting remaining requests: %v", err)
 				}
 			}
 			return
+		}
+	}
+}
+
+func (q *Queen) normalizeRequests(ctx context.Context) {
+	nctx, ncancel := context.WithCancel(ctx)
+	defer ncancel()
+
+	logger.Info("Starting continuous normalization...")
+
+	for {
+		select {
+		case <-nctx.Done():
+			logger.Info("Normalization context canceled, stopping normalization loop.")
+			return
+		default:
+			err := db.NormalizeRequests(nctx, q.dbc.Handler, q.dbc)
+			if err != nil {
+				logger.Errorf("Error during normalization: %w", err)
+			} else {
+				logger.Info("Normalization completed for current batch.")
+			}
 		}
 	}
 }
@@ -324,7 +348,7 @@ func (q *Queen) routine(ctx context.Context) {
 
 	for _, ant := range q.ants {
 		logger.Debugf("Upserting ant: %v\n", ant.Host.ID().String())
-		antID, err := q.Client.UpsertPeer(ctx, ant.Host.ID().String(), null.StringFrom(ant.UserAgent), nil, time.Now())
+		antID, err := q.dbc.UpsertPeer(ctx, ant.Host.ID().String(), null.StringFrom(ant.UserAgent), nil, time.Now())
 		if err != nil {
 			logger.Errorf("antID: %d could not be inserted because of %v", antID, err)
 		}
