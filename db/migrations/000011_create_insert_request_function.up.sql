@@ -22,7 +22,6 @@ BEGIN
         new_multi_hash,
         new_agent_version_id,
         new_protocols_set_id,
-        new_timestamp,
         new_timestamp
     ) INTO new_peer_id;
 
