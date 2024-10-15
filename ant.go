@@ -17,14 +17,16 @@ import (
 
 const (
 	celestiaNet = Mainnet
+	userAgent   = "celestiant"
 )
 
 type Ant struct {
-	Host host.Host
+	port uint16
 	dht  *kad.IpfsDHT
 
-	KadId bit256.Key
-	port  uint16
+	Host      host.Host
+	KadId     bit256.Key
+	UserAgent string
 }
 
 func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, port uint16, logsChan chan antslog.RequestLog) (*Ant, error) {
@@ -45,7 +47,7 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, port uint16, logsChan
 	}
 
 	opts := []libp2p.Option{
-		libp2p.UserAgent("celestiant"),
+		libp2p.UserAgent(userAgent),
 		libp2p.Identity(privKey),
 		libp2p.DisableRelay(),
 
@@ -75,10 +77,11 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, port uint16, logsChan
 	}
 
 	ant := &Ant{
-		Host:  h,
-		dht:   dht,
-		KadId: PeeridToKadid(h.ID()),
-		port:  port,
+		Host:      h,
+		dht:       dht,
+		KadId:     PeeridToKadid(h.ID()),
+		port:      port,
+		UserAgent: userAgent,
 	}
 
 	go dht.Bootstrap(ctx)

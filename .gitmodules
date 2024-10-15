@@ -2,3 +2,4 @@
 	path = go-libp2p-kad-dht
 	url = https://github.com/probe-lab/go-libp2p-kad-dht.git
 	branch = ants-log
+
