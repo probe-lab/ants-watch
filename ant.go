@@ -26,7 +26,6 @@ type Ant struct {
 
 	Host      host.Host
 	KadId     bit256.Key
-	PeerID    peer.ID
 	UserAgent string
 }
 
@@ -82,7 +81,6 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, port uint16, logsChan
 		dht:       dht,
 		KadId:     PeeridToKadid(h.ID()),
 		port:      port,
-		PeerID:    h.ID(),
 		UserAgent: userAgent,
 	}
 

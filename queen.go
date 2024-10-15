@@ -324,8 +324,8 @@ func (q *Queen) routine(ctx context.Context) {
 	}
 
 	for _, ant := range q.ants {
-		logger.Debugf("Upserting ant: %v\n", ant.PeerID.String())
-		antID, err := q.Client.UpsertPeer(ctx, ant.PeerID.String(), null.StringFrom(ant.UserAgent), nil, time.Now())
+		logger.Debugf("Upserting ant: %v\n", ant.Host.ID().String())
+		antID, err := q.Client.UpsertPeer(ctx, ant.Host.ID().String(), null.StringFrom(ant.UserAgent), nil, time.Now())
 		if err != nil {
 			logger.Errorf("antID: %d could not be inserted because of %v", antID, err)
 		}
