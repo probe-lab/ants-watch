@@ -9,10 +9,14 @@ import (
 	"time"
 
 	"github.com/dennis-tra/nebula-crawler/config"
+	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/antslog"
 	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	"github.com/probe-lab/go-libdht/kad"
 	"github.com/probe-lab/go-libdht/kad/key"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
@@ -32,6 +36,9 @@ var logger = log.Logger("ants-queen")
 type Queen struct {
 	nebulaDB *NebulaDB
 	keysDB   *KeysDB
+
+	peerstore peerstore.Peerstore
+	datastore ds.Batching
 
 	ants     []*Ant
 	antsLogs chan antslog.RequestLog
@@ -55,9 +62,13 @@ type Queen struct {
 	Client *db.DBClient
 }
 
-func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16) *Queen {
+func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16) (*Queen, error) {
 	nebulaDB := NewNebulaDB(dbConnString)
 	keysDB := NewKeysDB(keysDbPath)
+	peerstore, err := pstoremem.NewPeerstore()
+	if err != nil {
+		return nil, err
+	}
 
 	dbPort, err := strconv.Atoi(os.Getenv("DB_PORT"))
 	if err != nil {
@@ -119,6 +130,8 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 	queen := &Queen{
 		nebulaDB:         nebulaDB,
 		keysDB:           keysDB,
+		peerstore:        peerstore,
+		datastore:        dssync.MutexWrap(ds.NewMapDatastore()),
 		ants:             []*Ant{},
 		antsLogs:         make(chan antslog.RequestLog, 1024),
 		seen:             make(map[peer.ID]struct{}),
@@ -140,7 +153,7 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 
 	logger.Debug("queen created")
 
-	return queen
+	return queen, nil
 }
 
 func (q *Queen) takeAvailablePort() (uint16, error) {
@@ -194,6 +207,14 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 		select {
 		case log := <-q.antsLogs:
 			reqType := kadpb.Message_MessageType(log.Type).String()
+			maddrs := q.peerstore.Addrs(log.Requester)
+			var agent string
+			peerstoreAgent, err := q.peerstore.Get(log.Requester, "AgentVersion")
+			if err != nil {
+				agent = "unknown"
+			} else {
+				agent = peerstoreAgent.(string)
+			}
 			fmt.Printf(
 				"%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n",
 				log.Timestamp.Format(time.RFC3339),
@@ -201,8 +222,8 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				reqType,
 				log.Requester,
 				log.Target.B58String(),
-				log.Agent,
-				log.Maddrs,
+				agent,
+				maddrs,
 			)
 
 			// Keep this protocols slice empty for now,
@@ -215,8 +236,8 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				AntMultihash:     log.Self.String(),
 				PeerMultihash:    log.Requester.String(),
 				KeyMultihash:     log.Target.B58String(),
-				MultiAddresses:   db.MaddrsToAddrs(log.Maddrs),
-				AgentVersion:     null.StringFrom(log.Agent),
+				MultiAddresses:   db.MaddrsToAddrs(maddrs),
+				AgentVersion:     null.StringFrom(agent),
 			}
 			requests = append(requests, request)
 			if len(requests) >= q.resolveBatchSize {
@@ -228,10 +249,10 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			}
 			if _, ok := q.seen[log.Requester]; !ok {
 				q.seen[log.Requester] = struct{}{}
-				if strings.Contains(log.Agent, "light") {
+				if strings.Contains(agent, "light") {
 					lnCount++
 				}
-				fmt.Fprintf(f, "\r%s    %s\n", log.Requester, log.Agent)
+				fmt.Fprintf(f, "\r%s    %s\n", log.Requester, agent)
 				logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
 			}
 
@@ -316,7 +337,7 @@ func (q *Queen) routine(ctx context.Context) {
 			logger.Error("trying to spawn new ant: ")
 			continue
 		}
-		ant, err := SpawnAnt(ctx, key, port, q.antsLogs)
+		ant, err := SpawnAnt(ctx, key, q.peerstore, q.datastore, port, q.antsLogs)
 		if err != nil {
 			logger.Warn("error creating ant", err)
 		}

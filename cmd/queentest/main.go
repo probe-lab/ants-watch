@@ -32,10 +32,14 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	var queen *ants.Queen
+	var err error
 	if *upnp {
-		queen = ants.NewQueen(ctx, *postgresStr, "keys.db", 0, 0)
+		queen, err = ants.NewQueen(ctx, *postgresStr, "keys.db", 0, 0)
 	} else {
-		queen = ants.NewQueen(ctx, *postgresStr, "keys.db", uint16(*nPorts), uint16(*firstPort))
+		queen, err = ants.NewQueen(ctx, *postgresStr, "keys.db", uint16(*nPorts), uint16(*firstPort))
+	}
+	if err != nil {
+		panic(err)
 	}
 
 	go queen.Run(ctx)
@@ -54,7 +58,6 @@ func main() {
 			default:
 				err := db.NormalizeRequests(nctx, queen.Client.Handler, queen.Client)
 				if err != nil {
-
 					logger.Errorf("Error during normalization: %w", err)
 				} else {
 					logger.Info("Normalization completed for current batch.")
