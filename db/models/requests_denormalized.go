@@ -25,62 +25,62 @@ import (
 
 // RequestsDenormalized is an object representing the database table.
 type RequestsDenormalized struct {
-	ID              int               `boil:"id" json:"id" toml:"id" yaml:"id"`
-	Timestamp       time.Time         `boil:"timestamp" json:"timestamp" toml:"timestamp" yaml:"timestamp"`
-	RequestType     string            `boil:"request_type" json:"request_type" toml:"request_type" yaml:"request_type"`
-	AntID           string            `boil:"ant_id" json:"ant_id" toml:"ant_id" yaml:"ant_id"`
-	PeerID          string            `boil:"peer_id" json:"peer_id" toml:"peer_id" yaml:"peer_id"`
-	KeyID           string            `boil:"key_id" json:"key_id" toml:"key_id" yaml:"key_id"`
-	MultiAddressIds types.StringArray `boil:"multi_address_ids" json:"multi_address_ids,omitempty" toml:"multi_address_ids" yaml:"multi_address_ids,omitempty"`
-	AgentVersion    null.String       `boil:"agent_version" json:"agent_version,omitempty" toml:"agent_version" yaml:"agent_version,omitempty"`
-	NormalizedAt    null.Time         `boil:"normalized_at" json:"normalized_at,omitempty" toml:"normalized_at" yaml:"normalized_at,omitempty"`
+	ID               int64             `boil:"id" json:"id" toml:"id" yaml:"id"`
+	RequestStartedAt time.Time         `boil:"request_started_at" json:"request_started_at" toml:"request_started_at" yaml:"request_started_at"`
+	RequestType      string            `boil:"request_type" json:"request_type" toml:"request_type" yaml:"request_type"`
+	AntMultihash     string            `boil:"ant_multihash" json:"ant_multihash" toml:"ant_multihash" yaml:"ant_multihash"`
+	PeerMultihash    string            `boil:"peer_multihash" json:"peer_multihash" toml:"peer_multihash" yaml:"peer_multihash"`
+	KeyMultihash     string            `boil:"key_multihash" json:"key_multihash" toml:"key_multihash" yaml:"key_multihash"`
+	MultiAddresses   types.StringArray `boil:"multi_addresses" json:"multi_addresses,omitempty" toml:"multi_addresses" yaml:"multi_addresses,omitempty"`
+	AgentVersion     null.String       `boil:"agent_version" json:"agent_version,omitempty" toml:"agent_version" yaml:"agent_version,omitempty"`
+	NormalizedAt     null.Time         `boil:"normalized_at" json:"normalized_at,omitempty" toml:"normalized_at" yaml:"normalized_at,omitempty"`
 
 	R *requestsDenormalizedR `boil:"-" json:"-" toml:"-" yaml:"-"`
 	L requestsDenormalizedL  `boil:"-" json:"-" toml:"-" yaml:"-"`
 }
 
 var RequestsDenormalizedColumns = struct {
-	ID              string
-	Timestamp       string
-	RequestType     string
-	AntID           string
-	PeerID          string
-	KeyID           string
-	MultiAddressIds string
-	AgentVersion    string
-	NormalizedAt    string
+	ID               string
+	RequestStartedAt string
+	RequestType      string
+	AntMultihash     string
+	PeerMultihash    string
+	KeyMultihash     string
+	MultiAddresses   string
+	AgentVersion     string
+	NormalizedAt     string
 }{
-	ID:              "id",
-	Timestamp:       "timestamp",
-	RequestType:     "request_type",
-	AntID:           "ant_id",
-	PeerID:          "peer_id",
-	KeyID:           "key_id",
-	MultiAddressIds: "multi_address_ids",
-	AgentVersion:    "agent_version",
-	NormalizedAt:    "normalized_at",
+	ID:               "id",
+	RequestStartedAt: "request_started_at",
+	RequestType:      "request_type",
+	AntMultihash:     "ant_multihash",
+	PeerMultihash:    "peer_multihash",
+	KeyMultihash:     "key_multihash",
+	MultiAddresses:   "multi_addresses",
+	AgentVersion:     "agent_version",
+	NormalizedAt:     "normalized_at",
 }
 
 var RequestsDenormalizedTableColumns = struct {
-	ID              string
-	Timestamp       string
-	RequestType     string
-	AntID           string
-	PeerID          string
-	KeyID           string
-	MultiAddressIds string
-	AgentVersion    string
-	NormalizedAt    string
+	ID               string
+	RequestStartedAt string
+	RequestType      string
+	AntMultihash     string
+	PeerMultihash    string
+	KeyMultihash     string
+	MultiAddresses   string
+	AgentVersion     string
+	NormalizedAt     string
 }{
-	ID:              "requests_denormalized.id",
-	Timestamp:       "requests_denormalized.timestamp",
-	RequestType:     "requests_denormalized.request_type",
-	AntID:           "requests_denormalized.ant_id",
-	PeerID:          "requests_denormalized.peer_id",
-	KeyID:           "requests_denormalized.key_id",
-	MultiAddressIds: "requests_denormalized.multi_address_ids",
-	AgentVersion:    "requests_denormalized.agent_version",
-	NormalizedAt:    "requests_denormalized.normalized_at",
+	ID:               "requests_denormalized.id",
+	RequestStartedAt: "requests_denormalized.request_started_at",
+	RequestType:      "requests_denormalized.request_type",
+	AntMultihash:     "requests_denormalized.ant_multihash",
+	PeerMultihash:    "requests_denormalized.peer_multihash",
+	KeyMultihash:     "requests_denormalized.key_multihash",
+	MultiAddresses:   "requests_denormalized.multi_addresses",
+	AgentVersion:     "requests_denormalized.agent_version",
+	NormalizedAt:     "requests_denormalized.normalized_at",
 }
 
 // Generated where
@@ -136,25 +136,25 @@ func (w whereHelpernull_Time) IsNull() qm.QueryMod    { return qmhelper.WhereIsN
 func (w whereHelpernull_Time) IsNotNull() qm.QueryMod { return qmhelper.WhereIsNotNull(w.field) }
 
 var RequestsDenormalizedWhere = struct {
-	ID              whereHelperint
-	Timestamp       whereHelpertime_Time
-	RequestType     whereHelperstring
-	AntID           whereHelperstring
-	PeerID          whereHelperstring
-	KeyID           whereHelperstring
-	MultiAddressIds whereHelpertypes_StringArray
-	AgentVersion    whereHelpernull_String
-	NormalizedAt    whereHelpernull_Time
+	ID               whereHelperint64
+	RequestStartedAt whereHelpertime_Time
+	RequestType      whereHelperstring
+	AntMultihash     whereHelperstring
+	PeerMultihash    whereHelperstring
+	KeyMultihash     whereHelperstring
+	MultiAddresses   whereHelpertypes_StringArray
+	AgentVersion     whereHelpernull_String
+	NormalizedAt     whereHelpernull_Time
 }{
-	ID:              whereHelperint{field: "\"requests_denormalized\".\"id\""},
-	Timestamp:       whereHelpertime_Time{field: "\"requests_denormalized\".\"timestamp\""},
-	RequestType:     whereHelperstring{field: "\"requests_denormalized\".\"request_type\""},
-	AntID:           whereHelperstring{field: "\"requests_denormalized\".\"ant_id\""},
-	PeerID:          whereHelperstring{field: "\"requests_denormalized\".\"peer_id\""},
-	KeyID:           whereHelperstring{field: "\"requests_denormalized\".\"key_id\""},
-	MultiAddressIds: whereHelpertypes_StringArray{field: "\"requests_denormalized\".\"multi_address_ids\""},
-	AgentVersion:    whereHelpernull_String{field: "\"requests_denormalized\".\"agent_version\""},
-	NormalizedAt:    whereHelpernull_Time{field: "\"requests_denormalized\".\"normalized_at\""},
+	ID:               whereHelperint64{field: "\"requests_denormalized\".\"id\""},
+	RequestStartedAt: whereHelpertime_Time{field: "\"requests_denormalized\".\"request_started_at\""},
+	RequestType:      whereHelperstring{field: "\"requests_denormalized\".\"request_type\""},
+	AntMultihash:     whereHelperstring{field: "\"requests_denormalized\".\"ant_multihash\""},
+	PeerMultihash:    whereHelperstring{field: "\"requests_denormalized\".\"peer_multihash\""},
+	KeyMultihash:     whereHelperstring{field: "\"requests_denormalized\".\"key_multihash\""},
+	MultiAddresses:   whereHelpertypes_StringArray{field: "\"requests_denormalized\".\"multi_addresses\""},
+	AgentVersion:     whereHelpernull_String{field: "\"requests_denormalized\".\"agent_version\""},
+	NormalizedAt:     whereHelpernull_Time{field: "\"requests_denormalized\".\"normalized_at\""},
 }
 
 // RequestsDenormalizedRels is where relationship names are stored.
@@ -174,10 +174,10 @@ func (*requestsDenormalizedR) NewStruct() *requestsDenormalizedR {
 type requestsDenormalizedL struct{}
 
 var (
-	requestsDenormalizedAllColumns            = []string{"id", "timestamp", "request_type", "ant_id", "peer_id", "key_id", "multi_address_ids", "agent_version", "normalized_at"}
-	requestsDenormalizedColumnsWithoutDefault = []string{"timestamp", "request_type", "ant_id", "peer_id", "key_id"}
-	requestsDenormalizedColumnsWithDefault    = []string{"id", "multi_address_ids", "agent_version", "normalized_at"}
-	requestsDenormalizedPrimaryKeyColumns     = []string{"id", "timestamp"}
+	requestsDenormalizedAllColumns            = []string{"id", "request_started_at", "request_type", "ant_multihash", "peer_multihash", "key_multihash", "multi_addresses", "agent_version", "normalized_at"}
+	requestsDenormalizedColumnsWithoutDefault = []string{"request_started_at", "request_type", "ant_multihash", "peer_multihash", "key_multihash"}
+	requestsDenormalizedColumnsWithDefault    = []string{"id", "multi_addresses", "agent_version", "normalized_at"}
+	requestsDenormalizedPrimaryKeyColumns     = []string{"id", "request_started_at"}
 	requestsDenormalizedGeneratedColumns      = []string{"id"}
 )
 
@@ -472,7 +472,7 @@ func RequestsDenormalizeds(mods ...qm.QueryMod) requestsDenormalizedQuery {
 
 // FindRequestsDenormalized retrieves a single record by ID with an executor.
 // If selectCols is empty Find will return all columns.
-func FindRequestsDenormalized(ctx context.Context, exec boil.ContextExecutor, iD int, timestamp time.Time, selectCols ...string) (*RequestsDenormalized, error) {
+func FindRequestsDenormalized(ctx context.Context, exec boil.ContextExecutor, iD int64, requestStartedAt time.Time, selectCols ...string) (*RequestsDenormalized, error) {
 	requestsDenormalizedObj := &RequestsDenormalized{}
 
 	sel := "*"
@@ -480,10 +480,10 @@ func FindRequestsDenormalized(ctx context.Context, exec boil.ContextExecutor, iD
 		sel = strings.Join(strmangle.IdentQuoteSlice(dialect.LQ, dialect.RQ, selectCols), ",")
 	}
 	query := fmt.Sprintf(
-		"select %s from \"requests_denormalized\" where \"id\"=$1 AND \"timestamp\"=$2", sel,
+		"select %s from \"requests_denormalized\" where \"id\"=$1 AND \"request_started_at\"=$2", sel,
 	)
 
-	q := queries.Raw(query, iD, timestamp)
+	q := queries.Raw(query, iD, requestStartedAt)
 
 	err := q.Bind(ctx, exec, requestsDenormalizedObj)
 	if err != nil {
@@ -840,7 +840,7 @@ func (o *RequestsDenormalized) Delete(ctx context.Context, exec boil.ContextExec
 	}
 
 	args := queries.ValuesFromMapping(reflect.Indirect(reflect.ValueOf(o)), requestsDenormalizedPrimaryKeyMapping)
-	sql := "DELETE FROM \"requests_denormalized\" WHERE \"id\"=$1 AND \"timestamp\"=$2"
+	sql := "DELETE FROM \"requests_denormalized\" WHERE \"id\"=$1 AND \"request_started_at\"=$2"
 
 	if boil.IsDebug(ctx) {
 		writer := boil.DebugWriterFrom(ctx)
@@ -937,7 +937,7 @@ func (o RequestsDenormalizedSlice) DeleteAll(ctx context.Context, exec boil.Cont
 // Reload refetches the object from the database
 // using the primary keys with an executor.
 func (o *RequestsDenormalized) Reload(ctx context.Context, exec boil.ContextExecutor) error {
-	ret, err := FindRequestsDenormalized(ctx, exec, o.ID, o.Timestamp)
+	ret, err := FindRequestsDenormalized(ctx, exec, o.ID, o.RequestStartedAt)
 	if err != nil {
 		return err
 	}
@@ -976,16 +976,16 @@ func (o *RequestsDenormalizedSlice) ReloadAll(ctx context.Context, exec boil.Con
 }
 
 // RequestsDenormalizedExists checks if the RequestsDenormalized row exists.
-func RequestsDenormalizedExists(ctx context.Context, exec boil.ContextExecutor, iD int, timestamp time.Time) (bool, error) {
+func RequestsDenormalizedExists(ctx context.Context, exec boil.ContextExecutor, iD int64, requestStartedAt time.Time) (bool, error) {
 	var exists bool
-	sql := "select exists(select 1 from \"requests_denormalized\" where \"id\"=$1 AND \"timestamp\"=$2 limit 1)"
+	sql := "select exists(select 1 from \"requests_denormalized\" where \"id\"=$1 AND \"request_started_at\"=$2 limit 1)"
 
 	if boil.IsDebug(ctx) {
 		writer := boil.DebugWriterFrom(ctx)
 		fmt.Fprintln(writer, sql)
-		fmt.Fprintln(writer, iD, timestamp)
+		fmt.Fprintln(writer, iD, requestStartedAt)
 	}
-	row := exec.QueryRowContext(ctx, sql, iD, timestamp)
+	row := exec.QueryRowContext(ctx, sql, iD, requestStartedAt)
 
 	err := row.Scan(&exists)
 	if err != nil {

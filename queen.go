@@ -213,13 +213,13 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			// protocols := make([]string, 0)
 
 			request := models.RequestsDenormalized{
-				Timestamp:       log.Timestamp,
-				RequestType:     reqType,
-				AntID:           log.Self.String(),
-				PeerID:          log.Requester.String(),
-				KeyID:           log.Target.B58String(),
-				MultiAddressIds: db.MaddrsToAddrs(log.Maddrs),
-				AgentVersion:    null.StringFrom(log.Agent),
+				RequestStartedAt: log.Timestamp,
+				RequestType:      reqType,
+				AntMultihash:     log.Self.String(),
+				PeerMultihash:    log.Requester.String(),
+				KeyMultihash:     log.Target.B58String(),
+				MultiAddresses:   db.MaddrsToAddrs(log.Maddrs),
+				AgentVersion:     null.StringFrom(log.Agent),
 			}
 			requests = append(requests, request)
 			if len(requests) >= q.resolveBatchSize {

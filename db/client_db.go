@@ -596,11 +596,11 @@ func BulkInsertRequests(db *sql.DB, requests []models.RequestsDenormalized) erro
 
 	for _, request := range requests {
 		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d)", i, i+1, i+2, i+3, i+4, i+5, i+6))
-		valueArgs = append(valueArgs, request.Timestamp, request.RequestType, request.AntID, request.PeerID, request.KeyID, request.MultiAddressIds, request.AgentVersion)
+		valueArgs = append(valueArgs, request.RequestStartedAt, request.RequestType, request.AntMultihash, request.PeerMultihash, request.KeyMultihash, request.MultiAddresses, request.AgentVersion)
 		i += 7
 	}
 
-	stmt := fmt.Sprintf("INSERT INTO requests_denormalized (timestamp, request_type, ant_id, peer_id, key_id, multi_address_ids, agent_version) VALUES %s RETURNING id;",
+	stmt := fmt.Sprintf("INSERT INTO requests_denormalized (request_started_at, request_type, ant_multihash, peer_multihash, key_multihash, multi_addresses, agent_version) VALUES %s RETURNING id;",
 		strings.Join(valueStrings, ", "))
 
 	rows, err := db.Query(stmt, valueArgs...)
@@ -613,7 +613,7 @@ func BulkInsertRequests(db *sql.DB, requests []models.RequestsDenormalized) erro
 }
 
 func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) error {
-	rows, err := db.Query("SELECT id, timestamp, request_type, ant_id, peer_id, key_id, multi_address_ids, agent_version FROM requests_denormalized WHERE normalized_at IS NULL")
+	rows, err := db.Query("SELECT id, request_started_at, request_type, ant_multihash, peer_multihash, key_multihash, multi_addresses, agent_version FROM requests_denormalized WHERE normalized_at IS NULL")
 	if err != nil {
 		return err
 	}
@@ -621,18 +621,18 @@ func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) erro
 
 	for rows.Next() {
 		var request models.RequestsDenormalized
-		if err := rows.Scan(&request.ID, &request.Timestamp, &request.RequestType, &request.AntID, &request.PeerID, &request.KeyID, &request.MultiAddressIds, &request.AgentVersion); err != nil {
+		if err := rows.Scan(&request.ID, &request.RequestStartedAt, &request.RequestType, &request.AntMultihash, &request.PeerMultihash, &request.KeyMultihash, &request.MultiAddresses, &request.AgentVersion); err != nil {
 			return err
 		}
 
 		_, err = dbClient.PersistRequest(
 			ctx,
-			request.Timestamp,
+			request.RequestStartedAt,
 			request.RequestType,
-			request.AntID,
-			request.PeerID,
-			request.KeyID,
-			request.MultiAddressIds,
+			request.AntMultihash,
+			request.PeerMultihash,
+			request.KeyMultihash,
+			request.MultiAddresses,
 			request.AgentVersion, // agent versions
 			nil,                  // protocol sets
 		)
