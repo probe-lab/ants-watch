@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
+	"github.com/dennis-tra/nebula-crawler/config"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/antslog"
 	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
@@ -20,6 +22,13 @@ import (
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 	"github.com/probe-lab/go-libdht/kad/trie"
+	"github.com/volatiletech/null/v8"
+
+	"github.com/dennis-tra/nebula-crawler/maxmind"
+	"github.com/dennis-tra/nebula-crawler/tele"
+	"github.com/dennis-tra/nebula-crawler/udger"
+	"github.com/probe-lab/ants-watch/db"
+	"github.com/probe-lab/ants-watch/db/models"
 )
 
 var logger = log.Logger("ants-queen")
@@ -42,9 +51,18 @@ type Queen struct {
 	// the first item of the slice corresponds to the firstPort
 	portsOccupancy []bool
 	firstPort      uint16
+
+	dbc     *db.DBClient
+	mmc     *maxmind.Client
+	uclient *udger.Client
+
+	resolveBatchSize int
+	resolveBatchTime int // in sec
+
+	Client *db.DBClient
 }
 
-func NewQueen(dbConnString string, keysDbPath string, nPorts, firstPort uint16) (*Queen, error) {
+func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16) (*Queen, error) {
 	nebulaDB := NewNebulaDB(dbConnString)
 	keysDB := NewKeysDB(keysDbPath)
 	peerstore, err := pstoremem.NewPeerstore()
@@ -52,14 +70,77 @@ func NewQueen(dbConnString string, keysDbPath string, nPorts, firstPort uint16) 
 		return nil, err
 	}
 
+	dbPort, err := strconv.Atoi(os.Getenv("DB_PORT"))
+	if err != nil {
+		fmt.Errorf("Port must be an integer", err)
+	}
+
+	mP, _ := tele.NewMeterProvider()
+	tP, _ := tele.NewTracerProvider(ctx, "", 0)
+
+	dbc, err := db.InitDBClient(ctx, &config.Database{
+		DatabaseHost:           os.Getenv("DB_HOST"),
+		DatabasePort:           dbPort,
+		DatabaseName:           os.Getenv("DB_DATABASE"),
+		DatabaseUser:           os.Getenv("DB_USER"),
+		DatabasePassword:       os.Getenv("DB_PASSWORD"),
+		MeterProvider:          mP,
+		TracerProvider:         tP,
+		ProtocolsCacheSize:     100,
+		ProtocolsSetCacheSize:  200,
+		AgentVersionsCacheSize: 200,
+		DatabaseSSLMode:        os.Getenv("DB_SSLMODE"),
+	})
+	if err != nil {
+		logger.Errorf("Failed to initialize DB client: %v\n", err)
+	}
+
+	mmc, err := maxmind.NewClient(os.Getenv("MAXMIND_ASN_DB"), os.Getenv("MAXMIND_COUNTRY_DB"))
+	if err != nil {
+		logger.Errorf("Failed to initialized Maxmind client: %v\n", err)
+	}
+
+	filePathUdger := os.Getenv("UDGER_FILEPATH")
+	var uclient *udger.Client
+	if filePathUdger != "" {
+		uclient, err = udger.NewClient(filePathUdger)
+		if err != nil {
+			logger.Errorf("Failed to initialize Udger client with %s: %v\n", filePathUdger, err)
+		}
+	}
+
+	batchSizeEnvVal := os.Getenv("BATCH_SIZE")
+	if len(batchSizeEnvVal) == 0 {
+		batchSizeEnvVal = "1000"
+	}
+	batchSize, err := strconv.Atoi(batchSizeEnvVal)
+	if err != nil {
+		logger.Errorln("BATCH_SIZE should be an integer")
+	}
+
+	batchTimeEnvVal := os.Getenv("BATCH_SIZE")
+	if len(batchTimeEnvVal) == 0 {
+		batchTimeEnvVal = "30"
+	}
+	batchTime, err := strconv.Atoi(batchTimeEnvVal)
+	if err != nil {
+		logger.Errorln("BATCH_TIME should be an integer")
+	}
+
 	queen := &Queen{
-		nebulaDB:  nebulaDB,
-		keysDB:    keysDB,
+		nebulaDB:         nebulaDB,
+		keysDB:           keysDB,
 		peerstore: peerstore,
 		datastore: dssync.MutexWrap(ds.NewMapDatastore()),
-		ants:      []*Ant{},
-		antsLogs:  make(chan antslog.RequestLog, 1024),
-		seen:      make(map[peer.ID]struct{}),
+		ants:             []*Ant{},
+		antsLogs:         make(chan antslog.RequestLog, 1024),
+		seen:             make(map[peer.ID]struct{}),
+		dbc:              dbc,
+		mmc:              mmc,
+		uclient:          uclient,
+		resolveBatchSize: batchSize,
+		resolveBatchTime: batchTime,
+		Client:           dbc,
 	}
 
 	if nPorts == 0 {
@@ -102,7 +183,6 @@ func (q *Queen) Run(ctx context.Context) {
 	for {
 		select {
 		case <-t.C:
-			// crawl
 			q.routine(ctx)
 		case <-ctx.Done():
 			return
@@ -114,14 +194,19 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 	lnCount := 0
 	f, err := os.OpenFile("log.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		// TODO: improve this
-		panic(err)
+		logger.Panicln(err)
 	}
 	defer f.Close()
+
+	requests := make([]models.RequestsDenormalized, 0, q.resolveBatchSize)
+	// bulk insert for every batch size or N seconds, whichever comes first
+	ticker := time.NewTicker(time.Duration(q.resolveBatchTime) * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case log := <-q.antsLogs:
+			reqType := kadpb.Message_MessageType(log.Type).String()
 			maddrs := q.peerstore.Addrs(log.Requester)
 			var agent string
 			peerstoreAgent, err := q.peerstore.Get(log.Requester, "AgentVersion")
@@ -130,28 +215,63 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			} else {
 				agent = peerstoreAgent.(string)
 			}
-			if false {
-				reqType := kadpb.Message_MessageType(log.Type).String()
-				// TODO: persistant logging
-				fmt.Printf("%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n", log.Timestamp.Format(time.RFC3339), log.Self, reqType, log.Requester, log.Target.B58String(), agent, maddrs)
-			} else {
-				if _, ok := q.seen[log.Requester]; !ok {
-					q.seen[log.Requester] = struct{}{}
-					if strings.Contains(agent, "light") {
-						lnCount++
-					}
-					// count := len(q.seen)
-					// if count > 1 {
-					// 	fmt.Printf("\033[F")
-					// } else {
-					// 	fmt.Printf("%s \tstarting sniffing\n", time.Now().Format(time.RFC3339))
-					// }
-					fmt.Fprintf(f, "\r%s    %s\n", log.Requester, agent)
-					// fmt.Printf("%s\ttotal: %d \tlight: %d\n", time.Now().Format(time.RFC3339), len(q.seen), lnCount)
-					logger.Debugf("total: %d \tlight: %d \tqueue len: %d", len(q.seen), lnCount, len(q.antsLogs))
+			fmt.Printf(
+				"%s \tself: %s \ttype: %s \trequester: %s \ttarget: %s \tagent: %s \tmaddrs: %s\n",
+				log.Timestamp.Format(time.RFC3339),
+				log.Self,
+				reqType,
+				log.Requester,
+				log.Target.B58String(),
+				agent,
+				maddrs,
+			)
+
+			// Keep this protocols slice empty for now,
+			// because we don't need it yet and I don't know how to get it
+			// protocols := make([]string, 0)
+
+			request := models.RequestsDenormalized{
+				RequestStartedAt: log.Timestamp,
+				RequestType:      reqType,
+				AntMultihash:     log.Self.String(),
+				PeerMultihash:    log.Requester.String(),
+				KeyMultihash:     log.Target.B58String(),
+				MultiAddresses:   db.MaddrsToAddrs(maddrs),
+				AgentVersion:     null.StringFrom(agent),
+			}
+			requests = append(requests, request)
+			if len(requests) >= q.resolveBatchSize {
+				err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
+				if err != nil {
+					logger.Fatalf("Error inserting requests: %v", err)
+				}
+				requests = requests[:0]
+			}
+			if _, ok := q.seen[log.Requester]; !ok {
+				q.seen[log.Requester] = struct{}{}
+				if strings.Contains(log.Agent, "light") {
+					lnCount++
+				}
+				fmt.Fprintf(f, "\r%s    %s\n", log.Requester, agent)
+				logger.Debugf("total: %d \tlight: %d", len(q.seen), lnCount)
+			}
+
+		case <-ticker.C:
+			if len(requests) > 0 {
+				err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
+				if err != nil {
+					logger.Fatalf("Error inserting requests: %v", err)
+				}
+				requests = requests[:0]
+			}
+
+		case <-ctx.Done():
+			if len(requests) > 0 {
+				err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
+				if err != nil {
+					logger.Fatalf("Error inserting remaining requests: %v", err)
 				}
 			}
-		case <-ctx.Done():
 			return
 		}
 	}
@@ -214,7 +334,7 @@ func (q *Queen) routine(ctx context.Context) {
 	for _, key := range privKeys {
 		port, err := q.takeAvailablePort()
 		if err != nil {
-			logger.Error("trying to spwan new ant: ")
+			logger.Error("trying to spawn new ant: ")
 			continue
 		}
 		ant, err := SpawnAnt(ctx, key, q.peerstore, q.datastore, port, q.antsLogs)
@@ -222,6 +342,14 @@ func (q *Queen) routine(ctx context.Context) {
 			logger.Warn("error creating ant", err)
 		}
 		q.ants = append(q.ants, ant)
+	}
+
+	for _, ant := range q.ants {
+		logger.Debugf("Upserting ant: %v\n", ant.Host.ID().String())
+		antID, err := q.Client.UpsertPeer(ctx, ant.Host.ID().String(), null.StringFrom(ant.UserAgent), nil, time.Now())
+		if err != nil {
+			logger.Errorf("antID: %d could not be inserted because of %v", antID, err)
+		}
 	}
 
 	logger.Debugf("ants count: %d", len(q.ants))
