@@ -2,7 +2,7 @@
 
 Celestia Lightnode Population Monitor.
 
-![Ants Watch](./resources/ants.png)
+<img src="./resources/ants.png" alt="Ants Watch" height="300"/>
 
 Authors: [guillaumemichel](https://github.com/guillaumemichel), [kasteph](https://github.com/kasteph)
 
