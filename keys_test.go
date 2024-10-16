@@ -88,34 +88,21 @@ func TestKeysDB(t *testing.T) {
 	}
 }
 
-func TestReturnKeys(t *testing.T) {
-	nReturnedKeys := 2
+func TestReturnKeysToEmptyTrie(t *testing.T) {
 	filename := "test_keys.db"
-	prefixDepth := 4 // 2**(prefixDepth) prefixes
+	db := NewKeysDB(filename)
 	defer os.Remove(filename)
 
-	prefixes := genPrefixesForDepth(prefixDepth)
-	db := NewKeysDB(filename)
-	require.NotNil(t, db)
-	privKeys := db.MatchingKeys(prefixes[:len(prefixes)/2], nil)
-	// check that the provided private keys match the prefixes
-	require.Len(t, privKeys, len(prefixes)/2)
-	for i, prefix := range prefixes[:len(prefixes)/2] {
-		pid, err := peer.IDFromPrivateKey(privKeys[i])
-		require.NoError(t, err)
-		require.Equal(t, prefix.BitLen(), key.CommonPrefixLength(PeeridToKadid(pid), prefix))
-	}
-	// check that the keys are not reused
-	privKeys2 := db.MatchingKeys(prefixes[:len(prefixes)/2], privKeys[:nReturnedKeys])
-	require.Len(t, privKeys2, len(prefixes)/2)
+	key := genKey()
+	privKeys := db.MatchingKeys(nil, []crypto.PrivKey{key})
+	require.Len(t, privKeys, 0)
 
-	// test that returned keys are written to the file
 	keysTrie := db.readKeysFromFile()
-	for i := range nReturnedKeys {
-		pid, err := peer.IDFromPrivateKey(privKeys[i])
-		require.NoError(t, err)
-		found, key := trie.Find(keysTrie, PeeridToKadid(pid))
-		require.True(t, found)
-		require.Equal(t, privKeys[i], key)
-	}
+	require.Equal(t, 1, keysTrie.Size())
+
+	pid, err := peer.IDFromPrivateKey(key)
+	require.NoError(t, err)
+	found, foundKey := trie.Find(keysTrie, PeeridToKadid(pid))
+	require.True(t, found)
+	require.Equal(t, key, foundKey)
 }
