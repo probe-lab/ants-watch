@@ -70,7 +70,7 @@ func TestKeysDB(t *testing.T) {
 	db := NewKeysDB(filename)
 	require.NotNil(t, db)
 
-	privKeys := db.MatchingKeys(prefixes)
+	privKeys := db.MatchingKeys(prefixes, nil)
 
 	// check that the returned private keys match the prefixes
 	require.Len(t, privKeys, len(prefixes))
@@ -81,9 +81,41 @@ func TestKeysDB(t *testing.T) {
 	}
 
 	// check that the keys are not reused
-	privKeys2 := db.MatchingKeys(prefixes)
+	privKeys2 := db.MatchingKeys(prefixes, nil)
 	require.Len(t, privKeys2, len(prefixes))
 	for _, key := range privKeys {
 		require.NotContains(t, privKeys2, key)
+	}
+}
+
+func TestReturnKeys(t *testing.T) {
+	nReturnedKeys := 2
+	filename := "test_keys.db"
+	prefixDepth := 4 // 2**(prefixDepth) prefixes
+	defer os.Remove(filename)
+
+	prefixes := genPrefixesForDepth(prefixDepth)
+	db := NewKeysDB(filename)
+	require.NotNil(t, db)
+	privKeys := db.MatchingKeys(prefixes[:len(prefixes)/2], nil)
+	// check that the provided private keys match the prefixes
+	require.Len(t, privKeys, len(prefixes)/2)
+	for i, prefix := range prefixes[:len(prefixes)/2] {
+		pid, err := peer.IDFromPrivateKey(privKeys[i])
+		require.NoError(t, err)
+		require.Equal(t, prefix.BitLen(), key.CommonPrefixLength(PeeridToKadid(pid), prefix))
+	}
+	// check that the keys are not reused
+	privKeys2 := db.MatchingKeys(prefixes[:len(prefixes)/2], privKeys[:nReturnedKeys])
+	require.Len(t, privKeys2, len(prefixes)/2)
+
+	// test that returned keys are written to the file
+	keysTrie := db.readKeysFromFile()
+	for i := range nReturnedKeys {
+		pid, err := peer.IDFromPrivateKey(privKeys[i])
+		require.NoError(t, err)
+		found, key := trie.Find(keysTrie, PeeridToKadid(pid))
+		require.True(t, found)
+		require.Equal(t, privKeys[i], key)
 	}
 }
