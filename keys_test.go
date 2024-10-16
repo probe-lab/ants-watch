@@ -70,7 +70,7 @@ func TestKeysDB(t *testing.T) {
 	db := NewKeysDB(filename)
 	require.NotNil(t, db)
 
-	privKeys := db.MatchingKeys(prefixes)
+	privKeys := db.MatchingKeys(prefixes, nil)
 
 	// check that the returned private keys match the prefixes
 	require.Len(t, privKeys, len(prefixes))
@@ -81,9 +81,28 @@ func TestKeysDB(t *testing.T) {
 	}
 
 	// check that the keys are not reused
-	privKeys2 := db.MatchingKeys(prefixes)
+	privKeys2 := db.MatchingKeys(prefixes, nil)
 	require.Len(t, privKeys2, len(prefixes))
 	for _, key := range privKeys {
 		require.NotContains(t, privKeys2, key)
 	}
+}
+
+func TestReturnKeysToEmptyTrie(t *testing.T) {
+	filename := "test_keys.db"
+	db := NewKeysDB(filename)
+	defer os.Remove(filename)
+
+	key := genKey()
+	privKeys := db.MatchingKeys(nil, []crypto.PrivKey{key})
+	require.Len(t, privKeys, 0)
+
+	keysTrie := db.readKeysFromFile()
+	require.Equal(t, 1, keysTrie.Size())
+
+	pid, err := peer.IDFromPrivateKey(key)
+	require.NoError(t, err)
+	found, foundKey := trie.Find(keysTrie, PeeridToKadid(pid))
+	require.True(t, found)
+	require.Equal(t, key, foundKey)
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/antslog"
 	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
@@ -193,6 +194,7 @@ func (q *Queen) Run(ctx context.Context) {
 		case <-t.C:
 			q.routine(ctx)
 		case <-ctx.Done():
+			q.persistLiveAntsKeys()
 			return
 		}
 	}
@@ -279,6 +281,14 @@ func (q *Queen) normalizeRequests(ctx context.Context) {
 	}
 }
 
+func (q *Queen) persistLiveAntsKeys() {
+	antsKeys := make([]crypto.PrivKey, 0, len(q.ants))
+	for _, ant := range q.ants {
+		antsKeys = append(antsKeys, ant.Host.Peerstore().PrivKey(ant.Host.ID()))
+	}
+	q.keysDB.MatchingKeys(nil, antsKeys)
+}
+
 func (q *Queen) routine(ctx context.Context) {
 	networkPeers, err := q.nebulaDB.GetLatestPeerIds(ctx)
 	if err != nil {
@@ -324,7 +334,9 @@ func (q *Queen) routine(ctx context.Context) {
 	logger.Debugf("removing %d ants", len(excessAntsIndices))
 
 	// remove ants
-	for _, index := range excessAntsIndices {
+	returnedKeys := make([]crypto.PrivKey, len(excessAntsIndices))
+	for i, index := range excessAntsIndices {
+		returnedKeys[i] = q.ants[index].Host.Peerstore().PrivKey(q.ants[index].Host.ID())
 		port := q.ants[index].port
 		q.ants[index].Close()
 		q.ants = append(q.ants[:index], q.ants[index+1:]...)
@@ -332,7 +344,7 @@ func (q *Queen) routine(ctx context.Context) {
 	}
 
 	// add missing ants
-	privKeys := q.keysDB.MatchingKeys(missingKeys)
+	privKeys := q.keysDB.MatchingKeys(missingKeys, returnedKeys)
 	for _, key := range privKeys {
 		port, err := q.takeAvailablePort()
 		if err != nil {

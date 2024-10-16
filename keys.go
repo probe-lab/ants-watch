@@ -91,6 +91,17 @@ func (db *KeysDB) writeKeysToFile(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey
 	}
 }
 
+func integrateKeysIntoTrie(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey], keys []crypto.PrivKey) {
+	for _, key := range keys {
+		pid, err := peer.IDFromPrivateKey(key)
+		if err != nil {
+			logger.Warnf("Error getting peer ID: %v", err)
+			continue
+		}
+		keysTrie.Add(PeeridToKadid(pid), key)
+	}
+}
+
 func genKey() crypto.PrivKey {
 	priv, _, err := crypto.GenerateEd25519Key(rand.Reader)
 	if err != nil {
@@ -140,9 +151,12 @@ func getMatchingKeys(prefixes []bitstr.Key, keysTrie *trie.Trie[bit256.Key, cryp
 	return keys
 }
 
-func (db *KeysDB) MatchingKeys(prefixes []bitstr.Key) []crypto.PrivKey {
+func (db *KeysDB) MatchingKeys(prefixes []bitstr.Key, returned []crypto.PrivKey) []crypto.PrivKey {
 	// read keys from disk
 	keysTrie := db.readKeysFromFile()
+
+	// integrate returned keys into the trie, they are available again
+	integrateKeysIntoTrie(keysTrie, returned)
 
 	// pop any matching keys from the keysTrie, generate new keys if needed
 	// and store them in keysTrie
