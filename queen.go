@@ -73,7 +73,7 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 
 	dbPort, err := strconv.Atoi(os.Getenv("DB_PORT"))
 	if err != nil {
-		fmt.Errorf("Port must be an integer", err)
+		logger.Errorf("Port must be an integer", err)
 	}
 
 	mP, _ := tele.NewMeterProvider()
