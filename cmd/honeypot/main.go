@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/probe-lab/ants-watch"
@@ -25,6 +26,7 @@ func main() {
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -40,14 +42,32 @@ func main() {
 		panic(err)
 	}
 
-	go queen.Run(ctx)
-
+	errChan := make(chan error, 1)
 	go func() {
-		sig := <-sigChan
-		logger.Infof("Received signal: %s, shutting down...", sig)
-		cancel()
+		logger.Debugln("Starting Queen.Run")
+		errChan <- queen.Run(ctx)
+		logger.Debugln("Queen.Run completed")
 	}()
 
-	<-ctx.Done()
-	logger.Info("Context canceled, queen stopped")
+	select {
+	case err := <-errChan:
+		if err != nil {
+			logger.Errorf("Queen.Run returned an error: %v", err)
+		} else {
+			logger.Debugln("Queen.Run completed successfully")
+		}
+	case sig := <-sigChan:
+		logger.Infof("Received signal: %v, initiating shutdown...", sig)
+	}
+
+	cancel()
+
+	select {
+	case <-errChan:
+		logger.Debugln("Queen.Run stopped after context cancellation")
+	case <-time.After(30 * time.Second):
+		logger.Warnln("Timeout waiting for Queen.Run to stop")
+	}
+
+	logger.Debugln("Work is done")
 }
