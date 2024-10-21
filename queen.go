@@ -244,7 +244,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			} else {
 				agent = peerstoreAgent.(string)
 			}
-
+      
 			protocols, _ := q.peerstore.GetProtocols(log.Requester)
 			protocolsAsStr := protocol.ConvertToStrings(protocols)
 
