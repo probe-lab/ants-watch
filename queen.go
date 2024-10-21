@@ -218,7 +218,12 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			} else {
 				agent = peerstoreAgent.(string)
 			}
+			// TODO: uncomment when we need to track protocols
 			// protocols, _ := q.peerstore.GetProtocols(log.Requester)
+			// protocolsStr := make([]string, len(protocols))
+			// for i, p := range protocols {
+			// 	protocolsStr[i] = string(p)
+			// }
 
 			request := models.RequestsDenormalized{
 				RequestStartedAt: log.Timestamp,
@@ -228,6 +233,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				KeyMultihash:     log.Target.B58String(),
 				MultiAddresses:   db.MaddrsToAddrs(maddrs),
 				AgentVersion:     null.StringFrom(agent),
+				// Protocols:        protocolsStr,
 			}
 			requests = append(requests, request)
 			if len(requests) >= q.resolveBatchSize {

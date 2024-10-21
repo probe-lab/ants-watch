@@ -34,6 +34,7 @@ type RequestsDenormalized struct {
 	MultiAddresses   types.StringArray `boil:"multi_addresses" json:"multi_addresses,omitempty" toml:"multi_addresses" yaml:"multi_addresses,omitempty"`
 	AgentVersion     null.String       `boil:"agent_version" json:"agent_version,omitempty" toml:"agent_version" yaml:"agent_version,omitempty"`
 	NormalizedAt     null.Time         `boil:"normalized_at" json:"normalized_at,omitempty" toml:"normalized_at" yaml:"normalized_at,omitempty"`
+	Protocols        types.StringArray `boil:"protocols" json:"protocols,omitempty" toml:"protocols" yaml:"protocols,omitempty"`
 
 	R *requestsDenormalizedR `boil:"-" json:"-" toml:"-" yaml:"-"`
 	L requestsDenormalizedL  `boil:"-" json:"-" toml:"-" yaml:"-"`
@@ -49,6 +50,7 @@ var RequestsDenormalizedColumns = struct {
 	MultiAddresses   string
 	AgentVersion     string
 	NormalizedAt     string
+	Protocols        string
 }{
 	ID:               "id",
 	RequestStartedAt: "request_started_at",
@@ -59,6 +61,7 @@ var RequestsDenormalizedColumns = struct {
 	MultiAddresses:   "multi_addresses",
 	AgentVersion:     "agent_version",
 	NormalizedAt:     "normalized_at",
+	Protocols:        "protocols",
 }
 
 var RequestsDenormalizedTableColumns = struct {
@@ -71,6 +74,7 @@ var RequestsDenormalizedTableColumns = struct {
 	MultiAddresses   string
 	AgentVersion     string
 	NormalizedAt     string
+	Protocols        string
 }{
 	ID:               "requests_denormalized.id",
 	RequestStartedAt: "requests_denormalized.request_started_at",
@@ -81,6 +85,7 @@ var RequestsDenormalizedTableColumns = struct {
 	MultiAddresses:   "requests_denormalized.multi_addresses",
 	AgentVersion:     "requests_denormalized.agent_version",
 	NormalizedAt:     "requests_denormalized.normalized_at",
+	Protocols:        "requests_denormalized.protocols",
 }
 
 // Generated where
@@ -145,6 +150,7 @@ var RequestsDenormalizedWhere = struct {
 	MultiAddresses   whereHelpertypes_StringArray
 	AgentVersion     whereHelpernull_String
 	NormalizedAt     whereHelpernull_Time
+	Protocols        whereHelpertypes_StringArray
 }{
 	ID:               whereHelperint64{field: "\"requests_denormalized\".\"id\""},
 	RequestStartedAt: whereHelpertime_Time{field: "\"requests_denormalized\".\"request_started_at\""},
@@ -155,6 +161,7 @@ var RequestsDenormalizedWhere = struct {
 	MultiAddresses:   whereHelpertypes_StringArray{field: "\"requests_denormalized\".\"multi_addresses\""},
 	AgentVersion:     whereHelpernull_String{field: "\"requests_denormalized\".\"agent_version\""},
 	NormalizedAt:     whereHelpernull_Time{field: "\"requests_denormalized\".\"normalized_at\""},
+	Protocols:        whereHelpertypes_StringArray{field: "\"requests_denormalized\".\"protocols\""},
 }
 
 // RequestsDenormalizedRels is where relationship names are stored.
@@ -174,9 +181,9 @@ func (*requestsDenormalizedR) NewStruct() *requestsDenormalizedR {
 type requestsDenormalizedL struct{}
 
 var (
-	requestsDenormalizedAllColumns            = []string{"id", "request_started_at", "request_type", "ant_multihash", "peer_multihash", "key_multihash", "multi_addresses", "agent_version", "normalized_at"}
+	requestsDenormalizedAllColumns            = []string{"id", "request_started_at", "request_type", "ant_multihash", "peer_multihash", "key_multihash", "multi_addresses", "agent_version", "normalized_at", "protocols"}
 	requestsDenormalizedColumnsWithoutDefault = []string{"request_started_at", "request_type", "ant_multihash", "peer_multihash", "key_multihash"}
-	requestsDenormalizedColumnsWithDefault    = []string{"id", "multi_addresses", "agent_version", "normalized_at"}
+	requestsDenormalizedColumnsWithDefault    = []string{"id", "multi_addresses", "agent_version", "normalized_at", "protocols"}
 	requestsDenormalizedPrimaryKeyColumns     = []string{"id", "request_started_at"}
 	requestsDenormalizedGeneratedColumns      = []string{"id"}
 )
