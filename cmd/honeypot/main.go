@@ -66,7 +66,11 @@ func main() {
 	logging.SetLogLevel("basichost", "info")
 
 	queenCmd := flag.NewFlagSet("queen", flag.ExitOnError)
-	nebulaPostgresStr := queenCmd.String("postgres", "", "Postgres connection string, postgres://user:password@host:port/dbname")
+	nebulaPostgresStr := *queenCmd.String("postgres", "", "Postgres connection string, postgres://user:password@host:port/dbname")
+	if len(nebulaPostgresStr) == 0 {
+		nebulaPostgresStr = os.Getenv("NEBULA_POSTGRES_CONNURL")
+	}
+
 	nPorts := queenCmd.Int("nPorts", 128, "Number of ports ants can listen on")
 	firstPort := queenCmd.Int("firstPort", 6000, "First port ants can listen on")
 	upnp := queenCmd.Bool("upnp", false, "Enable UPnP")
@@ -102,7 +106,7 @@ func main() {
 
 		errChan := make(chan error, 1)
 		go func() {
-			errChan <- runQueen(ctx, *nebulaPostgresStr, *nPorts, *firstPort, *upnp)
+			errChan <- runQueen(ctx, nebulaPostgresStr, *nPorts, *firstPort, *upnp)
 		}()
 
 		select {
