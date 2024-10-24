@@ -184,7 +184,7 @@ func partitionQuery(table string, lower time.Time, upper time.Time) string {
 }
 
 func (c *DBClient) applyMigrations(cfg *config.Database, Handler *sql.DB) {
-	tmpDir, err := os.MkdirTemp("", "nebula")
+	tmpDir, err := os.MkdirTemp("", "ants-watch")
 	if err != nil {
 		log.WithError(err).WithField("pattern", "ants-watch").Warnln("Could not create tmp directory for migrations")
 		return

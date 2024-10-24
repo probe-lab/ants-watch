@@ -26,10 +26,10 @@ import (
 	"github.com/volatiletech/null/v8"
 
 	"github.com/dennis-tra/nebula-crawler/maxmind"
-	"github.com/dennis-tra/nebula-crawler/tele"
 	"github.com/dennis-tra/nebula-crawler/udger"
 	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/ants-watch/db/models"
+	tele "github.com/probe-lab/ants-watch/metrics"
 )
 
 var logger = log.Logger("ants-queen")
@@ -105,7 +105,18 @@ func getDbClient(ctx context.Context) *db.DBClient {
 	}
 
 	mP, _ := tele.NewMeterProvider()
-	tP, _ := tele.NewTracerProvider(ctx, "", 0)
+
+	tracesPort := os.Getenv("TRACES_PORT")
+	tracesPortAsInt, err := strconv.Atoi(tracesPort)
+	if err != nil {
+		logger.Errorf("Port must be an integer: %w", err)
+	}
+
+	tP, _ := tele.NewTracerProvider(
+		ctx,
+		os.Getenv("TRACES_HOST"),
+		tracesPortAsInt,
+	)
 
 	dbc, err := db.InitDBClient(ctx, &config.Database{
 		DatabaseHost:           os.Getenv("DB_HOST"),
