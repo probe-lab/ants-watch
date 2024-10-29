@@ -75,6 +75,7 @@ func main() {
 	firstPort := queenCmd.Int("firstPort", 6000, "First port ants can listen on")
 	upnp := queenCmd.Bool("upnp", false, "Enable UPnP")
 
+
 	healthCmd := flag.NewFlagSet("health", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
