@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/friendsofgo/errors"
+	"github.com/volatiletech/null/v8"
 	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/sqlboiler/v4/queries"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
@@ -31,6 +32,7 @@ type Request struct {
 	PeerID          int64            `boil:"peer_id" json:"peer_id" toml:"peer_id" yaml:"peer_id"`
 	KeyID           int              `boil:"key_id" json:"key_id" toml:"key_id" yaml:"key_id"`
 	MultiAddressIds types.Int64Array `boil:"multi_address_ids" json:"multi_address_ids,omitempty" toml:"multi_address_ids" yaml:"multi_address_ids,omitempty"`
+	ProtocolsSetID  null.Int         `boil:"protocols_set_id" json:"protocols_set_id,omitempty" toml:"protocols_set_id" yaml:"protocols_set_id,omitempty"`
 
 	R *requestR `boil:"-" json:"-" toml:"-" yaml:"-"`
 	L requestL  `boil:"-" json:"-" toml:"-" yaml:"-"`
@@ -44,6 +46,7 @@ var RequestColumns = struct {
 	PeerID          string
 	KeyID           string
 	MultiAddressIds string
+	ProtocolsSetID  string
 }{
 	ID:              "id",
 	Timestamp:       "timestamp",
@@ -52,6 +55,7 @@ var RequestColumns = struct {
 	PeerID:          "peer_id",
 	KeyID:           "key_id",
 	MultiAddressIds: "multi_address_ids",
+	ProtocolsSetID:  "protocols_set_id",
 }
 
 var RequestTableColumns = struct {
@@ -62,6 +66,7 @@ var RequestTableColumns = struct {
 	PeerID          string
 	KeyID           string
 	MultiAddressIds string
+	ProtocolsSetID  string
 }{
 	ID:              "requests.id",
 	Timestamp:       "requests.timestamp",
@@ -70,6 +75,7 @@ var RequestTableColumns = struct {
 	PeerID:          "requests.peer_id",
 	KeyID:           "requests.key_id",
 	MultiAddressIds: "requests.multi_address_ids",
+	ProtocolsSetID:  "requests.protocols_set_id",
 }
 
 // Generated where
@@ -85,6 +91,7 @@ var RequestWhere = struct {
 	PeerID          whereHelperint64
 	KeyID           whereHelperint
 	MultiAddressIds whereHelpertypes_Int64Array
+	ProtocolsSetID  whereHelpernull_Int
 }{
 	ID:              whereHelperint{field: "\"requests\".\"id\""},
 	Timestamp:       whereHelpertime_Time{field: "\"requests\".\"timestamp\""},
@@ -93,6 +100,7 @@ var RequestWhere = struct {
 	PeerID:          whereHelperint64{field: "\"requests\".\"peer_id\""},
 	KeyID:           whereHelperint{field: "\"requests\".\"key_id\""},
 	MultiAddressIds: whereHelpertypes_Int64Array{field: "\"requests\".\"multi_address_ids\""},
+	ProtocolsSetID:  whereHelpernull_Int{field: "\"requests\".\"protocols_set_id\""},
 }
 
 // RequestRels is where relationship names are stored.
@@ -112,9 +120,9 @@ func (*requestR) NewStruct() *requestR {
 type requestL struct{}
 
 var (
-	requestAllColumns            = []string{"id", "timestamp", "request_type", "ant_id", "peer_id", "key_id", "multi_address_ids"}
+	requestAllColumns            = []string{"id", "timestamp", "request_type", "ant_id", "peer_id", "key_id", "multi_address_ids", "protocols_set_id"}
 	requestColumnsWithoutDefault = []string{"timestamp", "request_type", "ant_id", "peer_id", "key_id"}
-	requestColumnsWithDefault    = []string{"id", "multi_address_ids"}
+	requestColumnsWithDefault    = []string{"id", "multi_address_ids", "protocols_set_id"}
 	requestPrimaryKeyColumns     = []string{"id", "timestamp"}
 	requestGeneratedColumns      = []string{"id"}
 )
