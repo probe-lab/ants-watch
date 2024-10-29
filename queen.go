@@ -216,7 +216,6 @@ func (q *Queen) Run(ctx context.Context) error {
 			q.routine(ctx)
 		case <-ctx.Done():
 			q.persistLiveAntsKeys()
-			return
 		}
 	}
 }
