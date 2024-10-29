@@ -184,7 +184,7 @@ func partitionQuery(table string, lower time.Time, upper time.Time) string {
 }
 
 func (c *DBClient) applyMigrations(cfg *config.Database, Handler *sql.DB) {
-	tmpDir, err := os.MkdirTemp("", "nebula")
+	tmpDir, err := os.MkdirTemp("", "ants-watch")
 	if err != nil {
 		log.WithError(err).WithField("pattern", "ants-watch").Warnln("Could not create tmp directory for migrations")
 		return
@@ -595,12 +595,12 @@ func BulkInsertRequests(ctx context.Context, db *sql.DB, requests []models.Reque
 	i := 1
 
 	for _, request := range requests {
-		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d)", i, i+1, i+2, i+3, i+4, i+5, i+6))
-		valueArgs = append(valueArgs, request.RequestStartedAt, request.RequestType, request.AntMultihash, request.PeerMultihash, request.KeyMultihash, request.MultiAddresses, request.AgentVersion)
-		i += 7
+		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)", i, i+1, i+2, i+3, i+4, i+5, i+6, i+7))
+		valueArgs = append(valueArgs, request.RequestStartedAt, request.RequestType, request.AntMultihash, request.PeerMultihash, request.KeyMultihash, request.MultiAddresses, request.AgentVersion, request.Protocols)
+		i += 8
 	}
 
-	stmt := fmt.Sprintf("INSERT INTO requests_denormalized (request_started_at, request_type, ant_multihash, peer_multihash, key_multihash, multi_addresses, agent_version) VALUES %s RETURNING id;",
+	stmt := fmt.Sprintf("INSERT INTO requests_denormalized (request_started_at, request_type, ant_multihash, peer_multihash, key_multihash, multi_addresses, agent_version, protocols) VALUES %s RETURNING id;",
 		strings.Join(valueStrings, ", "))
 
 	rows, err := queries.Raw(stmt, valueArgs...).QueryContext(ctx, db)
@@ -613,7 +613,7 @@ func BulkInsertRequests(ctx context.Context, db *sql.DB, requests []models.Reque
 }
 
 func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) error {
-	rows, err := db.Query("SELECT id, request_started_at, request_type, ant_multihash, peer_multihash, key_multihash, multi_addresses, agent_version FROM requests_denormalized WHERE normalized_at IS NULL")
+	rows, err := db.QueryContext(ctx, "SELECT id, request_started_at, request_type, ant_multihash, peer_multihash, key_multihash, multi_addresses, agent_version, protocols FROM requests_denormalized WHERE normalized_at IS NULL")
 	if err != nil {
 		return err
 	}
@@ -621,7 +621,7 @@ func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) erro
 
 	for rows.Next() {
 		var request models.RequestsDenormalized
-		if err := rows.Scan(&request.ID, &request.RequestStartedAt, &request.RequestType, &request.AntMultihash, &request.PeerMultihash, &request.KeyMultihash, &request.MultiAddresses, &request.AgentVersion); err != nil {
+		if err := rows.Scan(&request.ID, &request.RequestStartedAt, &request.RequestType, &request.AntMultihash, &request.PeerMultihash, &request.KeyMultihash, &request.MultiAddresses, &request.AgentVersion, &request.Protocols); err != nil {
 			return err
 		}
 
@@ -633,14 +633,14 @@ func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) erro
 			request.PeerMultihash,
 			request.KeyMultihash,
 			request.MultiAddresses,
-			request.AgentVersion, // agent versions
-			nil,                  // protocol sets
+			request.AgentVersion,
+			request.Protocols,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to normalize request ID %d: %w, timestamp: %v", request.ID, err, request.RequestStartedAt)
 		}
 
-		_, err = db.Exec("UPDATE requests_denormalized SET normalized_at = NOW() WHERE id = $1", request.ID)
+		_, err = db.ExecContext(ctx, "UPDATE requests_denormalized SET normalized_at = NOW() WHERE id = $1", request.ID)
 		if err != nil {
 			return fmt.Errorf("failed to update normalized_at for request ID %d: %w", request.ID, err)
 		}

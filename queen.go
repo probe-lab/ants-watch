@@ -16,6 +16,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	"github.com/probe-lab/go-libdht/kad"
 	"github.com/probe-lab/go-libdht/kad/key"
@@ -25,10 +26,10 @@ import (
 	"github.com/volatiletech/null/v8"
 
 	"github.com/dennis-tra/nebula-crawler/maxmind"
-	"github.com/dennis-tra/nebula-crawler/tele"
 	"github.com/dennis-tra/nebula-crawler/udger"
 	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/ants-watch/db/models"
+	tele "github.com/probe-lab/ants-watch/metrics"
 )
 
 var logger = log.Logger("ants-queen")
@@ -83,7 +84,7 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		mmc:              mmc,
 		uclient:          getUdgerClient(),
 		resolveBatchSize: getBatchSize(),
-		resolveBatchTime: getBatchSize(),
+		resolveBatchTime: getBatchTime(),
 	}
 
 	if nPorts != 0 {
@@ -104,7 +105,18 @@ func getDbClient(ctx context.Context) *db.DBClient {
 	}
 
 	mP, _ := tele.NewMeterProvider()
-	tP, _ := tele.NewTracerProvider(ctx, "", 0)
+
+	tracesPort := os.Getenv("TRACES_PORT")
+	tracesPortAsInt, err := strconv.Atoi(tracesPort)
+	if err != nil {
+		logger.Errorf("Port must be an integer: %w", err)
+	}
+
+	tP, _ := tele.NewTracerProvider(
+		ctx,
+		os.Getenv("TRACES_HOST"),
+		tracesPortAsInt,
+	)
 
 	dbc, err := db.InitDBClient(ctx, &config.Database{
 		DatabaseHost:           os.Getenv("DB_HOST"),
@@ -182,7 +194,10 @@ func (q *Queen) freePort(port uint16) {
 	}
 }
 
-func (q *Queen) Run(ctx context.Context) {
+func (q *Queen) Run(ctx context.Context) error {
+	logger.Debugln("Queen.Run started")
+	defer logger.Debugln("Queen.Run completing")
+
 	go q.consumeAntsLogs(ctx)
 	go q.normalizeRequests(ctx)
 
@@ -193,6 +208,10 @@ func (q *Queen) Run(ctx context.Context) {
 
 	for {
 		select {
+		case <-ctx.Done():
+			logger.Debugln("Queen.Run done..")
+			q.persistLiveAntsKeys()
+			return ctx.Err()
 		case <-crawlTime.C:
 			q.routine(ctx)
 		case <-ctx.Done():
@@ -210,6 +229,18 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 
 	for {
 		select {
+
+		case <-ctx.Done():
+			logger.Debugln("Gracefully shutting down ants...")
+			logger.Debugln("Number of requests remaining to be inserted:", len(requests))
+			if len(requests) > 0 {
+				err := db.BulkInsertRequests(context.Background(), q.dbc.Handler, requests)
+				if err != nil {
+					logger.Fatalf("Error inserting remaining requests: %v", err)
+				}
+			}
+			return
+
 		case log := <-q.antsLogs:
 			reqType := kadpb.Message_MessageType(log.Type).String()
 			maddrs := q.peerstore.Addrs(log.Requester)
@@ -220,12 +251,9 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			} else {
 				agent = peerstoreAgent.(string)
 			}
-			// TODO: uncomment when we need to track protocols
-			// protocols, _ := q.peerstore.GetProtocols(log.Requester)
-			// protocolsStr := make([]string, len(protocols))
-			// for i, p := range protocols {
-			// 	protocolsStr[i] = string(p)
-			// }
+
+			protocols, _ := q.peerstore.GetProtocols(log.Requester)
+			protocolsAsStr := protocol.ConvertToStrings(protocols)
 
 			request := models.RequestsDenormalized{
 				RequestStartedAt: log.Timestamp,
@@ -235,13 +263,13 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				KeyMultihash:     log.Target.B58String(),
 				MultiAddresses:   db.MaddrsToAddrs(maddrs),
 				AgentVersion:     null.StringFrom(agent),
-				// Protocols:        protocolsStr,
+				Protocols:        protocolsAsStr,
 			}
 			requests = append(requests, request)
 			if len(requests) >= q.resolveBatchSize {
 				err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
 				if err != nil {
-					logger.Fatalf("Error inserting requests: %v", err)
+					logger.Errorf("Error inserting requests: %v", err)
 				}
 				requests = requests[:0]
 			}
@@ -255,16 +283,12 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 				requests = requests[:0]
 			}
 
-		case <-ctx.Done():
-			if len(requests) > 0 {
-				err := db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
-				if err != nil {
-					logger.Fatalf("Error inserting remaining requests: %v", err)
-				}
-			}
-			return
+		default:
+			// against busy-looping since <-q.antsLogs is a busy chan
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
+
 }
 
 func (q *Queen) normalizeRequests(ctx context.Context) {
@@ -291,11 +315,13 @@ func (q *Queen) normalizeRequests(ctx context.Context) {
 }
 
 func (q *Queen) persistLiveAntsKeys() {
+	logger.Debugln("Persisting live ants keys")
 	antsKeys := make([]crypto.PrivKey, 0, len(q.ants))
 	for _, ant := range q.ants {
 		antsKeys = append(antsKeys, ant.Host.Peerstore().PrivKey(ant.Host.ID()))
 	}
 	q.keysDB.MatchingKeys(nil, antsKeys)
+	logger.Debugf("Number of antsKeys persisted: %d", len(antsKeys))
 }
 
 func (q *Queen) routine(ctx context.Context) {
