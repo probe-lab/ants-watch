@@ -214,8 +214,6 @@ func (q *Queen) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-crawlTime.C:
 			q.routine(ctx)
-		case <-ctx.Done():
-			q.persistLiveAntsKeys()
 		}
 	}
 }
