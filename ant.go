@@ -23,8 +23,9 @@ const (
 )
 
 type Ant struct {
-	port uint16
-	dht  *kad.IpfsDHT
+	port    uint16
+	dht     *kad.IpfsDHT
+	privKey crypto.PrivKey
 
 	Host      host.Host
 	KadId     bit256.Key
@@ -83,6 +84,7 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.P
 	ant := &Ant{
 		Host:      h,
 		dht:       dht,
+		privKey:   privKey,
 		KadId:     PeeridToKadid(h.ID()),
 		port:      port,
 		UserAgent: userAgent,

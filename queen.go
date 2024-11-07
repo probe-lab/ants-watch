@@ -374,9 +374,10 @@ func (q *Queen) routine(ctx context.Context) {
 	// remove ants
 	returnedKeys := make([]crypto.PrivKey, len(excessAntsIndices))
 	for i, index := range excessAntsIndices {
-		returnedKeys[i] = q.ants[index].Host.Peerstore().PrivKey(q.ants[index].Host.ID())
-		port := q.ants[index].port
-		q.ants[index].Close()
+		ant := q.ants[index]
+		returnedKeys[i] = ant.privKey
+		port := ant.port
+		ant.Close()
 		q.ants = append(q.ants[:index], q.ants[index+1:]...)
 		q.freePort(port)
 	}
