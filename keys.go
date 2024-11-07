@@ -93,7 +93,13 @@ func (db *KeysDB) writeKeysToFile(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey
 
 func integrateKeysIntoTrie(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey], keys []crypto.PrivKey) {
 	for _, key := range keys {
+		if key == nil {
+			logger.Warn("skipping nil key")
+			continue
+		}
+
 		pid, err := peer.IDFromPrivateKey(key)
+
 		if err != nil {
 			logger.Warnf("Error getting peer ID: %v", err)
 			continue
