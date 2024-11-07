@@ -86,9 +86,9 @@ Once the database is setup and migrations are applied, you can start the honeypo
 In [`cmd/honeypot/`](./cmd/honeypot/), you can run the following command:
 
 ```sh
-go run main.go queen -upnp=true # for UPnP
+go run . queen -upnp=true # for UPnP
 # or
-go run main.go queen -firstPort=<port> -nPorts=<count> # for port forwarding
+go run . queen -firstPort=<port> -nPorts=<count> # for port forwarding
 ```
 
 When UPnP is disabled, ports from `firstPort` to `firstPort + nPorts - 1` must be forwarded to the machine running `ants-watch`. `ants-watch` will be able to spawn at most `nPorts` distinct `ants`.
@@ -98,7 +98,7 @@ When UPnP is disabled, ports from `firstPort` to `firstPort + nPorts - 1` must b
 You can run a health check on the honeypot by running the following command:
 
 ```sh
-go run main.go health
+go run . health
 ```
 
 ## License
