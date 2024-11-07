@@ -3,13 +3,14 @@ package ants
 import (
 	"context"
 	"fmt"
-
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
 	antslog "github.com/libp2p/go-libp2p-kad-dht/antslog"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
@@ -62,7 +63,31 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.P
 		return nil, err
 	}
 
-	logger.Debugf("spaned ant. kadid: %s, peerid: %s, addrs: %s", PeeridToKadid(h.ID()).HexString(), h.ID(), h.Addrs())
+	logger.Debugf("spawned ant. kadid: %s, peerid: %s, addrs: %s", PeeridToKadid(h.ID()).HexString(), h.ID(), h.Addrs())
+
+	// temporary:
+	sub, err := h.EventBus().Subscribe(new(event.EvtLocalAddressesUpdated))
+	if err != nil {
+		logger.Warn("unable to subscribe to event bus: ", err)
+		return nil, err
+	}
+	go func() {
+		for evt := range sub.Out() {
+			ua, ok := evt.(event.EvtLocalAddressesUpdated)
+			if !ok {
+				logger.Warn("event is not of type event.UpdatedAddress")
+				continue
+			}
+
+			logger.Debugf("ant: %s, addrs: %s", h.ID(), ua.Current)
+		}
+	}()
+
+	h.Network().Notify(&network.NotifyBundle{
+		ConnectedF: func(n network.Network, conn network.Conn) {
+			logger.Debugf("ant: %s connected to: %s", h.ID(), conn.RemotePeer().ShortString())
+		},
+	})
 
 	dhtOpts := []kad.Option{
 		kad.Mode(kad.ModeServer),
