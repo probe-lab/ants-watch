@@ -106,7 +106,14 @@ func getDbClient(ctx context.Context) *db.DBClient {
 
 	mP, _ := tele.NewMeterProvider()
 
-	tracesPort := os.Getenv("TRACES_PORT")
+	tracesHost, tracesHostSet := os.LookupEnv("TRACES_HOST")
+	if !tracesHostSet {
+		tracesHost = "0.0.0.0"
+	}
+	tracesPort, tracesPortSet := os.LookupEnv("TRACES_PORT")
+	if !tracesPortSet {
+		tracesPort = "6667"
+	}
 	tracesPortAsInt, err := strconv.Atoi(tracesPort)
 	if err != nil {
 		logger.Errorf("Port must be an integer: %w", err)
@@ -114,7 +121,7 @@ func getDbClient(ctx context.Context) *db.DBClient {
 
 	tP, _ := tele.NewTracerProvider(
 		ctx,
-		os.Getenv("TRACES_HOST"),
+		tracesHost,
 		tracesPortAsInt,
 	)
 
@@ -285,7 +292,6 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-
 }
 
 func (q *Queen) normalizeRequests(ctx context.Context) {
