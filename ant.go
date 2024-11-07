@@ -10,7 +10,6 @@ import (
 	antslog "github.com/libp2p/go-libp2p-kad-dht/antslog"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
@@ -32,9 +31,6 @@ type Ant struct {
 }
 
 func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.Peerstore, datastore ds.Batching, port uint16, logsChan chan antslog.RequestLog) (*Ant, error) {
-	pid, _ := peer.IDFromPrivateKey(privKey)
-	logger.Debugf("spawning ant. kadid: %s, peerid: %s", PeeridToKadid(pid).HexString(), pid)
-
 	portStr := fmt.Sprint(port)
 
 	// taken from github.com/celestiaorg/celestia-node/nodebuilder/p2p/config.go
@@ -47,7 +43,6 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.P
 		"/ip4/0.0.0.0/tcp/" + portStr,
 		"/ip6/::/tcp/" + portStr,
 	}
-
 	opts := []libp2p.Option{
 		libp2p.UserAgent(userAgent),
 		libp2p.Identity(privKey),
@@ -66,6 +61,8 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.P
 		logger.Warn("unable to create libp2p host: ", err)
 		return nil, err
 	}
+
+	logger.Debugf("spaned ant. kadid: %s, peerid: %s, addrs: %s", PeeridToKadid(h.ID()).HexString(), h.ID(), h.Addrs())
 
 	dhtOpts := []kad.Option{
 		kad.Mode(kad.ModeServer),
