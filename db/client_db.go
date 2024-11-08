@@ -613,7 +613,7 @@ func BulkInsertRequests(ctx context.Context, db *sql.DB, requests []models.Reque
 }
 
 func NormalizeRequests(ctx context.Context, db *sql.DB, dbClient *DBClient) error {
-	rows, err := db.QueryContext(ctx, "SELECT id, request_started_at, request_type, ant_multihash, peer_multihash, key_multihash, multi_addresses, agent_version, protocols FROM requests_denormalized WHERE normalized_at IS NULL")
+	rows, err := db.QueryContext(ctx, "SELECT id, request_started_at, request_type, ant_multihash, peer_multihash, key_multihash, multi_addresses, agent_version, protocols FROM requests_denormalized WHERE normalized_at IS NULL LIMIT 1000")
 	if err != nil {
 		return err
 	}
