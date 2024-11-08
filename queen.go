@@ -99,31 +99,28 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 }
 
 func getDbClient(ctx context.Context) *db.DBClient {
-	dbPort, err := strconv.Atoi(os.Getenv("DB_PORT"))
+	dbPort, err := getEnvInt("DB_PORT", 5432)
 	if err != nil {
 		logger.Errorf("Port must be an integer: %w", err)
 	}
-
 	mP, _ := tele.NewMeterProvider()
 
 	tracesHost, tracesHostSet := os.LookupEnv("TRACES_HOST")
 	if !tracesHostSet {
-		tracesHost = "0.0.0.0"
+		tracesHost = ""
 	}
-	tracesPort, tracesPortSet := os.LookupEnv("TRACES_PORT")
-	if !tracesPortSet {
-		tracesPort = "6667"
-	}
-	tracesPortAsInt, err := strconv.Atoi(tracesPort)
+	tracesPort, err := getEnvInt("TRACES_PORT", 0)
 	if err != nil {
 		logger.Errorf("Port must be an integer: %w", err)
 	}
-
-	tP, _ := tele.NewTracerProvider(
+	tP, err := tele.NewTracerProvider(
 		ctx,
 		tracesHost,
-		tracesPortAsInt,
+		tracesPort,
 	)
+	if err != nil {
+		logger.Errorf("new tracer provider: %w", err)
+	}
 
 	dbc, err := db.InitDBClient(ctx, &config.Database{
 		DatabaseHost:           os.Getenv("DB_HOST"),
@@ -330,7 +327,7 @@ func (q *Queen) persistLiveAntsKeys() {
 func (q *Queen) routine(ctx context.Context) {
 	networkPeers, err := q.nebulaDB.GetLatestPeerIds(ctx)
 	if err != nil {
-		logger.Warn("unable to get latest peer ids from Nebula", err)
+		logger.Warn("unable to get latest peer ids from Nebula ", err)
 		return
 	}
 
