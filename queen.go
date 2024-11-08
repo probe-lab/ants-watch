@@ -99,7 +99,7 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 }
 
 func getDbClient(ctx context.Context) *db.DBClient {
-	dbPort, err := getEnvInt("DB_PORT", 6667)
+	dbPort, err := getEnvInt("DB_PORT", 5432)
 	if err != nil {
 		logger.Errorf("Port must be an integer: %w", err)
 	}
