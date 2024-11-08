@@ -1,6 +1,9 @@
 package ants
 
 import (
+	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/ipfs/go-cid"
@@ -52,4 +55,18 @@ func bitstrToBit256(strKey bitstr.Key, padding []byte) bit256.Key {
 		bit256Key[i/8] = currByte
 	}
 	return bit256.NewKey(bit256Key)
+}
+
+func getEnvInt(key string, defaultValue int) (int, error) {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return defaultValue, nil
+	}
+
+	result, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an int: %w", key, err)
+	}
+
+	return result, nil
 }
