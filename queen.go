@@ -248,7 +248,7 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			var agent string
 			peerstoreAgent, err := q.peerstore.Get(log.Requester, "AgentVersion")
 			if err != nil {
-				agent = "unknown"
+				agent = ""
 			} else {
 				agent = peerstoreAgent.(string)
 			}
