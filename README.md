@@ -22,7 +22,7 @@ Authors: [guillaumemichel](https://github.com/guillaumemichel), [kasteph](https:
 * Network size and peers distribution is obtained by querying an external [Nebula database](https://github.com/dennis-tra/nebula).
 * All `ants` run from within the same process, sharing the same DHT records.
 * The `ant queen` is responsible for spawning, adjusting the number and monitoring the ants as well as gathering their logs and persisting them to a central database.
-* `ants-watch` does not operate like a crawler, where after one run the number of DHT client nodes is captured. `ants-watch` captures the number of DHT clients over time and therefore, the longer it runs, the more accurate the resulting number of DHT client nodes becomes.
+* `ants-watch` does not operate like a crawler, where after one run the number of DHT client nodes is captured. `ants-watch` logs all received DHT requests and therefore, it must run continuously to provide the number of DHT client nodes over time.
 
 ### Supported networks
 
