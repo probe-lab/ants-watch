@@ -32,7 +32,10 @@ require (
 
 )
 
-require github.com/dennis-tra/nebula-crawler v0.0.0-20241010113859-38e4489a8fa7
+require (
+	github.com/dennis-tra/nebula-crawler v0.0.0-20241010113859-38e4489a8fa7
+	github.com/patrickmn/go-cache v2.1.0+incompatible
+)
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4 // indirect
@@ -153,7 +156,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
-	github.com/prometheus/client_golang v1.20.4 // indirect
+	github.com/prometheus/client_golang v1.20.4
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.60.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect

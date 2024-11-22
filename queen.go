@@ -27,6 +27,7 @@ import (
 
 	"github.com/dennis-tra/nebula-crawler/maxmind"
 	"github.com/dennis-tra/nebula-crawler/udger"
+	"github.com/patrickmn/go-cache"
 	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/ants-watch/db/models"
 	tele "github.com/probe-lab/ants-watch/metrics"
@@ -38,8 +39,9 @@ type Queen struct {
 	nebulaDB *NebulaDB
 	keysDB   *KeysDB
 
-	peerstore peerstore.Peerstore
-	datastore ds.Batching
+	peerstore   peerstore.Peerstore
+	datastore   ds.Batching
+	agentsCache *cache.Cache
 
 	ants     []*Ant
 	antsLogs chan antslog.RequestLog
@@ -79,6 +81,7 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		datastore:        dssync.MutexWrap(ds.NewMapDatastore()),
 		ants:             []*Ant{},
 		antsLogs:         make(chan antslog.RequestLog, 1024),
+		agentsCache:      cache.New(4*24*time.Hour, time.Hour), // 4 days of cache, clean every hour
 		upnp:             true,
 		dbc:              getDbClient(ctx),
 		mmc:              mmc,
@@ -248,9 +251,14 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			var agent string
 			peerstoreAgent, err := q.peerstore.Get(log.Requester, "AgentVersion")
 			if err != nil {
-				agent = ""
+				if peerstoreAgent, ok := q.agentsCache.Get(log.Requester.String()); ok {
+					agent = peerstoreAgent.(string)
+				} else {
+					agent = ""
+				}
 			} else {
 				agent = peerstoreAgent.(string)
+				q.agentsCache.Set(log.Requester.String(), agent, 0)
 			}
 
 			protocols, _ := q.peerstore.GetProtocols(log.Requester)
