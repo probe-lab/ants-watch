@@ -32,6 +32,6 @@ build:
 
 .PHONY: push
 push:
-	aws ecr get-login-password --profile probelab --region ${REPO_REGION} | docker login --username ${REPO_USER} --password-stdin ${REPO}
+	aws ecr get-login-password --region ${REPO_REGION} | docker login --username ${REPO_USER} --password-stdin ${REPO}
 	docker tag ${IMAGE_NAME} ${REPO}/${IMAGE_NAME}
 	docker push ${REPO}/${IMAGE_NAME}
