@@ -17,9 +17,8 @@ import (
 )
 
 const (
-	CRAWL_INTERVAL         = 30 * time.Minute
-	NORMALIZATION_INTERVAL = 60 * time.Second
-	BUCKET_SIZE            = 20
+	CRAWL_INTERVAL = 30 * time.Minute
+	BUCKET_SIZE    = 20
 )
 
 func PeeridToKadid(pid peer.ID) bit256.Key {
