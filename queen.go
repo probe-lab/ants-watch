@@ -206,7 +206,6 @@ func (q *Queen) Run(ctx context.Context) error {
 	defer logger.Debugln("Queen.Run completing")
 
 	go q.consumeAntsLogs(ctx)
-	go q.normalizeRequests(ctx)
 
 	crawlTime := time.NewTicker(CRAWL_INTERVAL)
 	defer crawlTime.Stop()
@@ -295,29 +294,6 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 		default:
 			// against busy-looping since <-q.antsLogs is a busy chan
 			time.Sleep(10 * time.Millisecond)
-		}
-	}
-}
-
-func (q *Queen) normalizeRequests(ctx context.Context) {
-	logger.Info("Starting continuous normalization...")
-
-	normalizationTime := time.NewTicker(NORMALIZATION_INTERVAL)
-	defer normalizationTime.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-normalizationTime.C:
-			// fall through
-		}
-
-		err := db.NormalizeRequests(ctx, q.dbc.Handler, q.dbc)
-		if err != nil {
-			logger.Errorf("Error during normalization: %s", err)
-		} else {
-			logger.Info("Normalization completed for current batch.")
 		}
 	}
 }
