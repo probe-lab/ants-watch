@@ -2,22 +2,21 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/probe-lab/ants-watch"
-	"github.com/probe-lab/ants-watch/metrics"
+	"github.com/probe-lab/ants-watch/db"
+	"github.com/urfave/cli/v2"
 )
 
 var logger = logging.Logger("ants-queen")
 
-func runQueen(ctx context.Context, nebulaPostgresStr string, nPorts, firstPort int, upnp bool) error {
+func runQueen(ctx context.Context, nebulaPostgresStr string, nPorts, firstPort int, upnp bool, clickhouseClient *db.Client) error {
 	var queen *ants.Queen
 	var err error
 
@@ -27,9 +26,9 @@ func runQueen(ctx context.Context, nebulaPostgresStr string, nPorts, firstPort i
 	}
 
 	if upnp {
-		queen, err = ants.NewQueen(ctx, nebulaPostgresStr, keyDBPath, 0, 0)
+		queen, err = ants.NewQueen(ctx, nebulaPostgresStr, keyDBPath, 0, 0, clickhouseClient)
 	} else {
-		queen, err = ants.NewQueen(ctx, nebulaPostgresStr, keyDBPath, uint16(nPorts), uint16(firstPort))
+		queen, err = ants.NewQueen(ctx, nebulaPostgresStr, keyDBPath, uint16(nPorts), uint16(firstPort), clickhouseClient)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create queen: %w", err)
@@ -65,77 +64,127 @@ func main() {
 	logging.SetLogLevel("dht", "error")
 	logging.SetLogLevel("basichost", "info")
 
-	queenCmd := flag.NewFlagSet("queen", flag.ExitOnError)
-	nebulaPostgresStr := *queenCmd.String("postgres", "", "Postgres connection string, postgres://user:password@host:port/dbname")
-	if len(nebulaPostgresStr) == 0 {
-		nebulaPostgresStr = os.Getenv("NEBULA_POSTGRES_CONNURL")
+	app := &cli.App{
+		Name:  "ants-watch",
+		Usage: "Get DHT clients in your p2p network using a honeypot",
+		Commands: []*cli.Command{
+			{
+				Name:  "queen",
+				Usage: "Starts the queen service",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "clickhouseAddress",
+						Usage:   "ClickHouse address containing the host and port, 127.0.0.1:9000",
+						EnvVars: []string{"CLICKHOUSE_ADDRESS"},
+					},
+					&cli.StringFlag{
+						Name:    "clickhouseDatabase",
+						Usage:   "The ClickHouse database where ants requests will be recorded",
+						EnvVars: []string{"CLICKHOUSE_DATABASE"},
+					},
+					&cli.StringFlag{
+						Name:    "clickhouseUsername",
+						Usage:   "The ClickHouse user that has the prerequisite privileges to record the requests",
+						EnvVars: []string{"CLICKHOUSE_USERNAME"},
+					},
+					&cli.StringFlag{
+						Name:    "clickhousePassword",
+						Usage:   "The password for the ClickHouse user",
+						EnvVars: []string{"CLICKHOUSE_PASSWORD"},
+					},
+					&cli.StringFlag{
+						Name:    "nebulaDatabaseConnString",
+						Usage:   "The connection string for the Postgres Nebula database",
+						EnvVars: []string{"NEBULA_DB_CONNSTRING"},
+					},
+					&cli.IntFlag{
+						Name:  "nPorts",
+						Value: 128,
+						Usage: "Number of ports ants can listen on",
+					},
+					&cli.IntFlag{
+						Name:  "firstPort",
+						Value: 6000,
+						Usage: "First port ants can listen on",
+					},
+					&cli.BoolFlag{
+						Name:  "upnp",
+						Value: false,
+						Usage: "Enable UPnP",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return runQueenCommand(c)
+				},
+			},
+			{
+				Name:  "health",
+				Usage: "Checks the health of the service",
+				Action: func(c *cli.Context) error {
+					return healthCheckCommand()
+				},
+			},
+		},
 	}
 
-	nPorts := queenCmd.Int("nPorts", 128, "Number of ports ants can listen on")
-	firstPort := queenCmd.Int("firstPort", 6000, "First port ants can listen on")
-	upnp := queenCmd.Bool("upnp", false, "Enable UPnP")
-
-
-	healthCmd := flag.NewFlagSet("health", flag.ExitOnError)
-
-	if len(os.Args) < 2 {
-		fmt.Println("Expected 'queen' or 'health' subcommands")
-		os.Exit(1)
-	}
-
-	if os.Args[1] != "health" {
-		metricsHost := os.Getenv("METRICS_HOST")
-		metricsPort := os.Getenv("METRICS_PORT")
-
-		p, err := strconv.Atoi(metricsPort)
-		if err != nil {
-			logger.Errorf("Port should be an int %v\n", metricsPort)
-		}
-		logger.Infoln("Serving metrics endpoint")
-		go metrics.ListenAndServe(metricsHost, p)
-	}
-
-	switch os.Args[1] {
-	case "queen":
-		queenCmd.Parse(os.Args[2:])
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-		errChan := make(chan error, 1)
-		go func() {
-			errChan <- runQueen(ctx, nebulaPostgresStr, *nPorts, *firstPort, *upnp)
-		}()
-
-		select {
-		case err := <-errChan:
-			if err != nil {
-				logger.Error(err)
-				os.Exit(1)
-			}
-		case sig := <-sigChan:
-			logger.Infof("Received signal: %v, initiating shutdown...", sig)
-			cancel()
-			<-errChan
-		}
-
-	case "health":
-		healthCmd.Parse(os.Args[2:])
-
-		ctx := context.Background()
-		if err := HealthCheck(&ctx); err != nil {
-			fmt.Printf("Health check failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("Health check passed")
-
-	default:
-		fmt.Printf("Unknown command: %s\n", os.Args[1])
+	if err := app.Run(os.Args); err != nil {
+		logger.Warnf("Error running app: %v\n", err)
 		os.Exit(1)
 	}
 
 	logger.Debugln("Work is done")
+}
+
+func runQueenCommand(c *cli.Context) error {
+	nebulaPostgresStr := c.String("nebulaDatabaseConnString")
+	nPorts := c.Int("nPorts")
+	firstPort := c.Int("firstPort")
+	upnp := c.Bool("upnp")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	address := c.String("clickhouseAddress")
+	database := c.String("clickhouseDatabase")
+	username := c.String("clickhouseUsername")
+	password := c.String("clickhousePassword")
+
+	client, err := db.NewDatabaseClient(
+		ctx, address, database, username, password,
+	)
+	if err != nil {
+		logger.Errorln(err)
+	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	errChan := make(chan error, 1)
+
+	go func() {
+		errChan <- runQueen(ctx, nebulaPostgresStr, nPorts, firstPort, upnp, client)
+	}()
+
+	select {
+	case err := <-errChan:
+		if err != nil {
+			logger.Error(err)
+			return err
+		}
+	case sig := <-sigChan:
+		logger.Infof("Received signal: %v, initiating shutdown...", sig)
+		cancel()
+		<-errChan
+	}
+	return nil
+}
+
+func healthCheckCommand() error {
+	ctx := context.Background()
+	if err := HealthCheck(&ctx); err != nil {
+		logger.Infof("Health check failed: %v\n", err)
+		return err
+	}
+	logger.Infoln("Health check passed")
+	return nil
 }
