@@ -57,11 +57,13 @@ type Queen struct {
 	mmc     *maxmind.Client
 	uclient *udger.Client
 
+	clickhouseClient *db.Client
+
 	resolveBatchSize int
 	resolveBatchTime int // in sec
 }
 
-func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16) (*Queen, error) {
+func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16, clickhouseClient *db.Client) (*Queen, error) {
 	nebulaDB := NewNebulaDB(dbConnString)
 	keysDB := NewKeysDB(keysDbPath)
 	peerstore, err := pstoremem.NewPeerstore()
@@ -88,6 +90,7 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		uclient:          getUdgerClient(),
 		resolveBatchSize: getBatchSize(),
 		resolveBatchTime: getBatchTime(),
+		clickhouseClient: clickhouseClient,
 	}
 
 	if nPorts != 0 {
