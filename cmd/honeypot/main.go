@@ -16,19 +16,14 @@ import (
 
 var logger = logging.Logger("ants-queen")
 
-func runQueen(ctx context.Context, nebulaPostgresStr string, nPorts, firstPort int, upnp bool, clickhouseClient *db.Client) error {
+func runQueen(ctx context.Context, clickhouseClient *db.Client) error {
 	var queen *ants.Queen
 	var err error
 
-	keyDBPath := os.Getenv("KEY_DB_PATH")
-	if len(keyDBPath) == 0 {
-		keyDBPath = "keys.db"
-	}
-
-	if upnp {
-		queen, err = ants.NewQueen(ctx, nebulaPostgresStr, keyDBPath, 0, 0, clickhouseClient)
+	if rootConfig.UPnp {
+		queen, err = ants.NewQueen(ctx, rootConfig.NebulaDBConnString, rootConfig.KeyDBPath, 0, 0, clickhouseClient)
 	} else {
-		queen, err = ants.NewQueen(ctx, nebulaPostgresStr, keyDBPath, uint16(nPorts), uint16(firstPort), clickhouseClient)
+		queen, err = ants.NewQueen(ctx, rootConfig.NebulaDBConnString, rootConfig.KeyDBPath, uint16(rootConfig.NumPorts), uint16(rootConfig.FirstPort), clickhouseClient)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create queen: %w", err)
@@ -73,37 +68,48 @@ func main() {
 				Usage: "Starts the queen service",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:    "clickhouseAddress",
-						Usage:   "ClickHouse address containing the host and port, 127.0.0.1:9000",
-						EnvVars: []string{"CLICKHOUSE_ADDRESS"},
+						Name:        "ants.clickhouse.address",
+						Usage:       "ClickHouse address containing the host and port, 127.0.0.1:9000",
+						EnvVars:     []string{"ANTS_CLICKHOUSE_ADDRESS"},
+						Destination: &rootConfig.AntsClickhouseAddress,
+						Value:       rootConfig.AntsClickhouseAddress,
 					},
 					&cli.StringFlag{
-						Name:    "clickhouseDatabase",
-						Usage:   "The ClickHouse database where ants requests will be recorded",
-						EnvVars: []string{"CLICKHOUSE_DATABASE"},
+						Name:        "ants.clickhouse.database",
+						Usage:       "The ClickHouse database where ants requests will be recorded",
+						EnvVars:     []string{"ANTS_CLICKHOUSE_DATABASE"},
+						Destination: &rootConfig.AntsClickhouseDatabase,
+						Value:       rootConfig.AntsClickhouseDatabase,
 					},
 					&cli.StringFlag{
-						Name:    "clickhouseUsername",
-						Usage:   "The ClickHouse user that has the prerequisite privileges to record the requests",
-						EnvVars: []string{"CLICKHOUSE_USERNAME"},
+						Name:        "ants.clickhouse.username",
+						Usage:       "The ClickHouse user that has the prerequisite privileges to record the requests",
+						EnvVars:     []string{"ANTS_CLICKHOUSE_USERNAME"},
+						Destination: &rootConfig.AntsClickhouseUsername,
+						Value:       rootConfig.AntsClickhouseUsername,
 					},
 					&cli.StringFlag{
-						Name:    "clickhousePassword",
+						Name:    "ants.clickhouse.password",
 						Usage:   "The password for the ClickHouse user",
-						EnvVars: []string{"CLICKHOUSE_PASSWORD"},
+						EnvVars: []string{"ANTS_CLICKHOUSE_PASSWORD"},
 					},
 					&cli.StringFlag{
-						Name:    "nebulaDatabaseConnString",
+						Name:    "nebula.db.connstring",
 						Usage:   "The connection string for the Postgres Nebula database",
 						EnvVars: []string{"NEBULA_DB_CONNSTRING"},
 					},
+					&cli.PathFlag{
+						Name:    "key.db_path",
+						Usage:   "The path to the data store containing the keys",
+						EnvVars: []string{"KEY_DB_PATH"},
+					},
 					&cli.IntFlag{
-						Name:  "nPorts",
+						Name:  "num_ports",
 						Value: 128,
 						Usage: "Number of ports ants can listen on",
 					},
 					&cli.IntFlag{
-						Name:  "firstPort",
+						Name:  "first_port",
 						Value: 6000,
 						Usage: "First port ants can listen on",
 					},
@@ -113,21 +119,23 @@ func main() {
 						Usage: "Enable UPnP",
 					},
 				},
-				Action: func(c *cli.Context) error {
-					return runQueenCommand(c)
-				},
+				Action: runQueenCommand,
 			},
 			{
-				Name:  "health",
-				Usage: "Checks the health of the service",
-				Action: func(c *cli.Context) error {
-					return healthCheckCommand()
-				},
+				Name:   "health",
+				Usage:  "Checks the health of the service",
+				Action: HealthCheck,
 			},
 		},
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sctx, stop := signal.NotifyContext(ctx, syscall.SIGINT)
+	defer stop()
+
+	if err := app.RunContext(sctx, os.Args); err != nil {
 		logger.Warnf("Error running app: %v\n", err)
 		os.Exit(1)
 	}
@@ -136,33 +144,22 @@ func main() {
 }
 
 func runQueenCommand(c *cli.Context) error {
-	nebulaPostgresStr := c.String("nebulaDatabaseConnString")
-	nPorts := c.Int("nPorts")
-	firstPort := c.Int("firstPort")
-	upnp := c.Bool("upnp")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	address := c.String("clickhouseAddress")
-	database := c.String("clickhouseDatabase")
-	username := c.String("clickhouseUsername")
-	password := c.String("clickhousePassword")
-
 	client, err := db.NewDatabaseClient(
-		ctx, address, database, username, password,
+		c.Context,
+		rootConfig.AntsClickhouseAddress,
+		rootConfig.AntsClickhouseDatabase,
+		rootConfig.AntsClickhouseUsername,
+		rootConfig.AntsClickhousePassword,
 	)
+
 	if err != nil {
 		logger.Errorln(err)
 	}
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
 	errChan := make(chan error, 1)
 
 	go func() {
-		errChan <- runQueen(ctx, nebulaPostgresStr, nPorts, firstPort, upnp, client)
+		errChan <- runQueen(c.Context, client)
 	}()
 
 	select {
@@ -171,20 +168,6 @@ func runQueenCommand(c *cli.Context) error {
 			logger.Error(err)
 			return err
 		}
-	case sig := <-sigChan:
-		logger.Infof("Received signal: %v, initiating shutdown...", sig)
-		cancel()
-		<-errChan
 	}
-	return nil
-}
-
-func healthCheckCommand() error {
-	ctx := context.Background()
-	if err := HealthCheck(&ctx); err != nil {
-		logger.Infof("Health check failed: %v\n", err)
-		return err
-	}
-	logger.Infoln("Health check passed")
 	return nil
 }
