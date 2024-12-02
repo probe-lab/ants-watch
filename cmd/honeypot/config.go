@@ -1,6 +1,6 @@
 package main
 
-var rootConfig = struct {
+var RootConfig = struct {
 	AntsClickhouseAddress  string
 	AntsClickhouseDatabase string
 	AntsClickhouseUsername string

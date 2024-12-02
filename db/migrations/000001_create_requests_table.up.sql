@@ -4,8 +4,8 @@ CREATE TABLE requests
     ant_multihash    String,
     remote_multihash String,
     agent_version    Nullable(String),
-    protocols        Nullable(Array(String)),
-    started_at       DateTime64(3),
+    protocols        Array(Nullable(String)),
+    started_at       DateTime,
     request_type     Enum8(
                          'PUT_VALUE',
                          'GET_VALUE',

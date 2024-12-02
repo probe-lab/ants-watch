@@ -20,10 +20,10 @@ func runQueen(ctx context.Context, clickhouseClient *db.Client) error {
 	var queen *ants.Queen
 	var err error
 
-	if rootConfig.UPnp {
-		queen, err = ants.NewQueen(ctx, rootConfig.NebulaDBConnString, rootConfig.KeyDBPath, 0, 0, clickhouseClient)
+	if RootConfig.UPnp {
+		queen, err = ants.NewQueen(ctx, RootConfig.NebulaDBConnString, RootConfig.KeyDBPath, 0, 0, clickhouseClient)
 	} else {
-		queen, err = ants.NewQueen(ctx, rootConfig.NebulaDBConnString, rootConfig.KeyDBPath, uint16(rootConfig.NumPorts), uint16(rootConfig.FirstPort), clickhouseClient)
+		queen, err = ants.NewQueen(ctx, RootConfig.NebulaDBConnString, RootConfig.KeyDBPath, uint16(RootConfig.NumPorts), uint16(RootConfig.FirstPort), clickhouseClient)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create queen: %w", err)
@@ -71,32 +71,36 @@ func main() {
 						Name:        "ants.clickhouse.address",
 						Usage:       "ClickHouse address containing the host and port, 127.0.0.1:9000",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_ADDRESS"},
-						Destination: &rootConfig.AntsClickhouseAddress,
-						Value:       rootConfig.AntsClickhouseAddress,
+						Destination: &RootConfig.AntsClickhouseAddress,
+						Value:       RootConfig.AntsClickhouseAddress,
 					},
 					&cli.StringFlag{
 						Name:        "ants.clickhouse.database",
 						Usage:       "The ClickHouse database where ants requests will be recorded",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_DATABASE"},
-						Destination: &rootConfig.AntsClickhouseDatabase,
-						Value:       rootConfig.AntsClickhouseDatabase,
+						Destination: &RootConfig.AntsClickhouseDatabase,
+						Value:       RootConfig.AntsClickhouseDatabase,
 					},
 					&cli.StringFlag{
 						Name:        "ants.clickhouse.username",
 						Usage:       "The ClickHouse user that has the prerequisite privileges to record the requests",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_USERNAME"},
-						Destination: &rootConfig.AntsClickhouseUsername,
-						Value:       rootConfig.AntsClickhouseUsername,
+						Destination: &RootConfig.AntsClickhouseUsername,
+						Value:       RootConfig.AntsClickhouseUsername,
 					},
 					&cli.StringFlag{
-						Name:    "ants.clickhouse.password",
-						Usage:   "The password for the ClickHouse user",
-						EnvVars: []string{"ANTS_CLICKHOUSE_PASSWORD"},
+						Name:        "ants.clickhouse.password",
+						Usage:       "The password for the ClickHouse user",
+						EnvVars:     []string{"ANTS_CLICKHOUSE_PASSWORD"},
+						Destination: &RootConfig.AntsClickhousePassword,
+						Value:       RootConfig.AntsClickhousePassword,
 					},
 					&cli.StringFlag{
-						Name:    "nebula.db.connstring",
-						Usage:   "The connection string for the Postgres Nebula database",
-						EnvVars: []string{"NEBULA_DB_CONNSTRING"},
+						Name:        "nebula.db.connstring",
+						Usage:       "The connection string for the Postgres Nebula database",
+						EnvVars:     []string{"NEBULA_DB_CONNSTRING"},
+						Destination: &RootConfig.NebulaDBConnString,
+						Value:       RootConfig.NebulaDBConnString,
 					},
 					&cli.PathFlag{
 						Name:    "key.db_path",
@@ -146,10 +150,10 @@ func main() {
 func runQueenCommand(c *cli.Context) error {
 	client, err := db.NewDatabaseClient(
 		c.Context,
-		rootConfig.AntsClickhouseAddress,
-		rootConfig.AntsClickhouseDatabase,
-		rootConfig.AntsClickhouseUsername,
-		rootConfig.AntsClickhousePassword,
+		RootConfig.AntsClickhouseAddress,
+		RootConfig.AntsClickhouseDatabase,
+		RootConfig.AntsClickhouseUsername,
+		RootConfig.AntsClickhousePassword,
 	)
 
 	if err != nil {
