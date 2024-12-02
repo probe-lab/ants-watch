@@ -2,22 +2,18 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	// "github.com/dennis-tra/nebula-crawler/config"
-	lru "github.com/hashicorp/golang-lru"
+	"github.com/golang-migrate/migrate/v4/database/multistmt"
+	"github.com/google/uuid"
 	mt "github.com/probe-lab/ants-watch/metrics"
-	// log "github.com/ipfs/go-log/v2"
 )
 
 type Client struct {
 	ctx  context.Context
 	conn driver.Conn
-
-	agentVersion  *lru.Cache
-	protocols     *lru.Cache
-	protocolsSets *lru.Cache
 
 	telemetry *mt.Telemetry
 }
@@ -39,8 +35,49 @@ func NewDatabaseClient(ctx context.Context, address, database, username, passwor
 		return nil, err
 	}
 
+	if err := conn.Ping(ctx); err != nil {
+		return nil, err
+	}
+
 	return &Client{
 		ctx:  ctx,
 		conn: conn,
 	}, nil
+}
+
+type BatchRequest struct {
+	ctx context.Context
+
+	insertStatement string
+
+	conn  driver.Conn
+	batch driver.Batch
+}
+
+func NewBatch(ctx context.Context, conn driver.Conn, insertStatement string) (*BatchRequest, error) {
+	batch, err := conn.PrepareBatch(ctx, insertStatement, driver.WithReleaseConnection())
+	if err != nil {
+		return nil, err
+	}
+
+	return &BatchRequest{
+		ctx:             ctx,
+		insertStatement: insertStatement,
+		conn:            conn,
+		batch:           batch,
+	}, nil
+}
+
+func (b *BatchRequest) Append(id, antMultihash, remoteMultihash, agentVersion string, protocols []string, startedAt time.Time, requestType, keyMultihash string, multiAddresses []string) error {
+	return b.batch.Append(
+		id,
+		antMultihash,
+		remoteMultihash,
+		agentVersion,
+		protocols,
+		startedAt,
+		requestType,
+		keyMultihash,
+		multiAddresses,
+	)
 }

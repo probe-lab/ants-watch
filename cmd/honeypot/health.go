@@ -14,7 +14,7 @@ func HealthCheck(c *cli.Context) error {
 		os.Getenv("METRICS_HOST"),
 		os.Getenv("METRICS_PORT"),
 	)
-	req, err := http.NewRequestWithContext(c, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(c.Context, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return err
 	}

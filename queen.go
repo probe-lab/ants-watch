@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dennis-tra/nebula-crawler/config"
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
 	"github.com/ipfs/go-log/v2"
@@ -25,12 +24,9 @@ import (
 	"github.com/probe-lab/go-libdht/kad/trie"
 	"github.com/volatiletech/null/v8"
 
-	"github.com/dennis-tra/nebula-crawler/maxmind"
-	"github.com/dennis-tra/nebula-crawler/udger"
 	"github.com/patrickmn/go-cache"
 	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/ants-watch/db/models"
-	tele "github.com/probe-lab/ants-watch/metrics"
 )
 
 var logger = log.Logger("ants-queen")
@@ -53,10 +49,6 @@ type Queen struct {
 	portsOccupancy []bool
 	firstPort      uint16
 
-	dbc     *db.DBClient
-	mmc     *maxmind.Client
-	uclient *udger.Client
-
 	clickhouseClient *db.Client
 
 	resolveBatchSize int
@@ -71,11 +63,6 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		return nil, err
 	}
 
-	mmc, err := maxmind.NewClient(os.Getenv("MAXMIND_ASN_DB"), os.Getenv("MAXMIND_COUNTRY_DB"))
-	if err != nil {
-		logger.Errorf("Failed to initialized Maxmind client: %v\n", err)
-	}
-
 	queen := &Queen{
 		nebulaDB:         nebulaDB,
 		keysDB:           keysDB,
@@ -85,9 +72,6 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 		antsLogs:         make(chan antslog.RequestLog, 1024),
 		agentsCache:      cache.New(4*24*time.Hour, time.Hour), // 4 days of cache, clean every hour
 		upnp:             true,
-		dbc:              getDbClient(ctx),
-		mmc:              mmc,
-		uclient:          getUdgerClient(),
 		resolveBatchSize: getBatchSize(),
 		resolveBatchTime: getBatchTime(),
 		clickhouseClient: clickhouseClient,
@@ -102,63 +86,6 @@ func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPort
 	logger.Info("queen created")
 
 	return queen, nil
-}
-
-func getDbClient(ctx context.Context) *db.DBClient {
-	dbPort, err := getEnvInt("DB_PORT", 5432)
-	if err != nil {
-		logger.Errorf("Port must be an integer: %w", err)
-	}
-	mP, _ := tele.NewMeterProvider()
-
-	tracesHost, tracesHostSet := os.LookupEnv("TRACES_HOST")
-	if !tracesHostSet {
-		tracesHost = ""
-	}
-	tracesPort, err := getEnvInt("TRACES_PORT", 0)
-	if err != nil {
-		logger.Errorf("Port must be an integer: %w", err)
-	}
-	tP, err := tele.NewTracerProvider(
-		ctx,
-		tracesHost,
-		tracesPort,
-	)
-	if err != nil {
-		logger.Errorf("new tracer provider: %w", err)
-	}
-
-	dbc, err := db.InitDBClient(ctx, &config.Database{
-		DatabaseHost:           os.Getenv("DB_HOST"),
-		DatabasePort:           dbPort,
-		DatabaseName:           os.Getenv("DB_DATABASE"),
-		DatabaseUser:           os.Getenv("DB_USER"),
-		DatabasePassword:       os.Getenv("DB_PASSWORD"),
-		MeterProvider:          mP,
-		TracerProvider:         tP,
-		ProtocolsCacheSize:     100,
-		ProtocolsSetCacheSize:  200,
-		AgentVersionsCacheSize: 200,
-		DatabaseSSLMode:        os.Getenv("DB_SSLMODE"),
-	})
-	if err != nil {
-		logger.Errorf("Failed to initialize DB client: %v\n", err)
-	}
-	return dbc
-}
-
-func getUdgerClient() *udger.Client {
-	filePathUdger := os.Getenv("UDGER_FILEPATH")
-	if filePathUdger != "" {
-		uclient, err := udger.NewClient(filePathUdger)
-		if err != nil {
-			logger.Errorf("Failed to initialize Udger client with %s: %v\n", filePathUdger, err)
-			return nil
-		}
-		return uclient
-	}
-	logger.Warn("Missing UDGER_FILEPATH: skipping udger")
-	return nil
 }
 
 func getBatchSize() int {
@@ -239,12 +166,12 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 		case <-ctx.Done():
 			logger.Debugln("Gracefully shutting down ants...")
 			logger.Debugln("Number of requests remaining to be inserted:", len(requests))
-			if len(requests) > 0 {
-				err := db.BulkInsertRequests(context.Background(), q.dbc.Handler, requests)
-				if err != nil {
-					logger.Fatalf("Error inserting remaining requests: %v", err)
-				}
-			}
+			// if len(requests) > 0 {
+			// 	err := db.BulkInsertRequests(context.Background(), q.dbc.Handler, requests)
+			// 	if err != nil {
+			// 		logger.Fatalf("Error inserting remaining requests: %v", err)
+			// 	}
+			// }
 			return
 
 		case log := <-q.antsLogs:
@@ -278,20 +205,20 @@ func (q *Queen) consumeAntsLogs(ctx context.Context) {
 			}
 			requests = append(requests, request)
 			if len(requests) >= q.resolveBatchSize {
-				err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
-				if err != nil {
-					logger.Errorf("Error inserting requests: %v", err)
-				}
-				requests = requests[:0]
+				// err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
+				// if err != nil {
+				// 	logger.Errorf("Error inserting requests: %v", err)
+				// }
+				// requests = requests[:0]
 			}
 
 		case <-ticker.C:
 			if len(requests) > 0 {
-				err := db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
-				if err != nil {
-					logger.Fatalf("Error inserting requests: %v", err)
-				}
-				requests = requests[:0]
+				// err := db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
+				// if err != nil {
+				// 	logger.Fatalf("Error inserting requests: %v", err)
+				// }
+				// requests = requests[:0]
 			}
 
 		default:
@@ -383,9 +310,10 @@ func (q *Queen) routine(ctx context.Context) {
 
 	for _, ant := range q.ants {
 		logger.Debugf("Upserting ant: %v\n", ant.Host.ID().String())
-		antID, err := q.dbc.UpsertPeer(ctx, ant.Host.ID().String(), null.StringFrom(ant.UserAgent), nil, time.Now())
+		// antID, err := q.dbc.UpsertPeer(ctx, ant.Host.ID().String(), null.StringFrom(ant.UserAgent), nil, time.Now())
 		if err != nil {
-			logger.Errorf("antID: %d could not be inserted because of %v", antID, err)
+			logger.Errorf("Couldn't upsert")
+			// logger.Errorf("antID: %d could not be inserted because of %v", antID, err)
 		}
 	}
 

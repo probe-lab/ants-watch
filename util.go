@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	CRAWL_INTERVAL = 30 * time.Minute
+	CRAWL_INTERVAL = 120 * time.Minute
 	BUCKET_SIZE    = 20
 )
 
