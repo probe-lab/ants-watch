@@ -1,14 +1,8 @@
 package ants
 
 import (
-	"fmt"
-	"os"
-	"strconv"
-	"time"
-
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
-
 	mh "github.com/multiformats/go-multihash"
 	mhreg "github.com/multiformats/go-multihash/core"
 
@@ -16,10 +10,7 @@ import (
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 )
 
-const (
-	CRAWL_INTERVAL = 120 * time.Minute
-	BUCKET_SIZE    = 20
-)
+const bucketSize = 20
 
 func PeeridToKadid(pid peer.ID) bit256.Key {
 	hasher, _ := mhreg.GetHasher(mh.SHA2_256)
@@ -54,18 +45,4 @@ func bitstrToBit256(strKey bitstr.Key, padding []byte) bit256.Key {
 		bit256Key[i/8] = currByte
 	}
 	return bit256.NewKey(bit256Key)
-}
-
-func getEnvInt(key string, defaultValue int) (int, error) {
-	value, exists := os.LookupEnv(key)
-	if !exists {
-		return defaultValue, nil
-	}
-
-	result, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, fmt.Errorf("%s must be an int: %w", key, err)
-	}
-
-	return result, nil
 }

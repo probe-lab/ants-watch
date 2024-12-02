@@ -8,15 +8,23 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+type NebulaProvider interface {
+	GetLatestPeerIds(ctx context.Context) ([]peer.ID, error)
+}
+
 type NebulaDB struct {
-	ConnString string
+	ConnString    string
+	CrawlInterval time.Duration
 
 	connPool *pgxpool.Pool
 }
 
-func NewNebulaDB(connString string) *NebulaDB {
+var _ NebulaProvider = (*NebulaDB)(nil)
+
+func NewNebulaDB(connString string, crawlInterval time.Duration) *NebulaDB {
 	return &NebulaDB{
-		ConnString: connString,
+		ConnString:    connString,
+		CrawlInterval: crawlInterval,
 	}
 }
 
@@ -59,7 +67,7 @@ func (db *NebulaDB) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
         LIMIT 1
 	`
 
-	crawlIntervalAgo := time.Now().Add(-CRAWL_INTERVAL)
+	crawlIntervalAgo := time.Now().Add(-db.CrawlInterval)
 	var crawlId uint64
 	err := db.connPool.QueryRow(ctx, crawlIdQuery, crawlIntervalAgo).Scan(&crawlId)
 	if err != nil {
@@ -76,7 +84,7 @@ func (db *NebulaDB) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
 			AND v.connect_error IS NULL
 	`
 
-	beforeLastCrawlStarted := crawlIntervalAgo.Add(-CRAWL_INTERVAL)
+	beforeLastCrawlStarted := crawlIntervalAgo.Add(-db.CrawlInterval)
 	rows, err := db.connPool.Query(ctx, peersQuery, beforeLastCrawlStarted, crawlId)
 	if err != nil {
 		logger.Warn("unable to get peers from Nebula DB: ", err)
@@ -100,4 +108,20 @@ func (db *NebulaDB) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
 	logger.Debugf("found %d peers during the last Nebula crawl", len(peerIds))
 
 	return peerIds, nil
+}
+
+type NebulaServiceProvider struct {
+	address string
+}
+
+var _ NebulaProvider = (*NebulaServiceProvider)(nil)
+
+func NewNebulaServiceProvider() *NebulaServiceProvider {
+	// TODO: init gRPC service client
+	return &NebulaServiceProvider{}
+}
+
+func (n NebulaServiceProvider) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
+	// TODO: request peers from Nebula service
+	return nil, nil
 }
