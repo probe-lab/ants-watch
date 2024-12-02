@@ -16,44 +16,6 @@ import (
 
 var logger = logging.Logger("ants-queen")
 
-func runQueen(ctx context.Context, clickhouseClient *db.Client) error {
-	var queen *ants.Queen
-	var err error
-
-	if RootConfig.UPnp {
-		queen, err = ants.NewQueen(ctx, RootConfig.NebulaDBConnString, RootConfig.KeyDBPath, 0, 0, clickhouseClient)
-	} else {
-		queen, err = ants.NewQueen(ctx, RootConfig.NebulaDBConnString, RootConfig.KeyDBPath, uint16(RootConfig.NumPorts), uint16(RootConfig.FirstPort), clickhouseClient)
-	}
-	if err != nil {
-		return fmt.Errorf("failed to create queen: %w", err)
-	}
-
-	errChan := make(chan error, 1)
-	go func() {
-		logger.Debugln("Starting Queen.Run")
-		errChan <- queen.Run(ctx)
-		logger.Debugln("Queen.Run completed")
-	}()
-
-	select {
-	case err := <-errChan:
-		if err != nil {
-			return fmt.Errorf("queen.Run returned an error: %w", err)
-		}
-		logger.Debugln("Queen.Run completed successfully")
-	case <-ctx.Done():
-		select {
-		case <-errChan:
-			logger.Debugln("Queen.Run stopped after context cancellation")
-		case <-time.After(30 * time.Second):
-			logger.Warnln("Timeout waiting for Queen.Run to stop")
-		}
-	}
-
-	return nil
-}
-
 func main() {
 	logging.SetLogLevel("ants-queen", "debug")
 	logging.SetLogLevel("dht", "error")
@@ -155,6 +117,8 @@ func main() {
 }
 
 func runQueenCommand(c *cli.Context) error {
+	ctx := c.Context
+
 	client, err := db.NewDatabaseClient(
 		c.Context,
 		RootConfig.AntsClickhouseAddress,
@@ -169,18 +133,37 @@ func runQueenCommand(c *cli.Context) error {
 		return fmt.Errorf("init database client: %w", err)
 	}
 
-	errChan := make(chan error, 1)
+	var queen *ants.Queen
+	if RootConfig.UPnp {
+		queen, err = ants.NewQueen(ctx, RootConfig.NebulaDBConnString, RootConfig.KeyDBPath, 0, 0, client)
+	} else {
+		queen, err = ants.NewQueen(ctx, RootConfig.NebulaDBConnString, RootConfig.KeyDBPath, uint16(RootConfig.NumPorts), uint16(RootConfig.FirstPort), client)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to create queen: %w", err)
+	}
 
+	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runQueen(c.Context, client)
+		logger.Debugln("Starting Queen.Run")
+		errChan <- queen.Run(ctx)
+		logger.Debugln("Queen.Run completed")
 	}()
 
 	select {
 	case err := <-errChan:
 		if err != nil {
-			logger.Error(err)
-			return err
+			return fmt.Errorf("queen.Run returned an error: %w", err)
+		}
+		logger.Debugln("Queen.Run completed successfully")
+	case <-ctx.Done():
+		select {
+		case <-errChan:
+			logger.Debugln("Queen.Run stopped after context cancellation")
+		case <-time.After(30 * time.Second):
+			logger.Warnln("Timeout waiting for Queen.Run to stop")
 		}
 	}
+
 	return nil
 }
