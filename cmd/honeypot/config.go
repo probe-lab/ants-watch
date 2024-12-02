@@ -5,6 +5,7 @@ var RootConfig = struct {
 	AntsClickhouseDatabase string
 	AntsClickhouseUsername string
 	AntsClickhousePassword string
+	AntsClickhouseSSL      bool
 
 	NebulaDBConnString string
 	KeyDBPath          string
@@ -17,6 +18,7 @@ var RootConfig = struct {
 	AntsClickhouseDatabase: "",
 	AntsClickhouseUsername: "",
 	AntsClickhousePassword: "",
+	AntsClickhouseSSL:      true,
 
 	NebulaDBConnString: "",
 	KeyDBPath:          "keys.db",
