@@ -166,6 +166,7 @@ func runQueenCommand(c *cli.Context) error {
 
 	if err != nil {
 		logger.Errorln(err)
+		return fmt.Errorf("init database client: %w", err)
 	}
 
 	errChan := make(chan error, 1)
