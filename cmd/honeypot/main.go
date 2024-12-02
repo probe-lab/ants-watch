@@ -95,6 +95,13 @@ func main() {
 						Destination: &RootConfig.AntsClickhousePassword,
 						Value:       RootConfig.AntsClickhousePassword,
 					},
+					&cli.BoolFlag{
+						Name:        "ants.clickhouse.password",
+						Usage:       "Whether to use SSL for the ClickHouse connection",
+						EnvVars:     []string{"ANTS_CLICKHOUSE_SSL"},
+						Destination: &RootConfig.AntsClickhouseSSL,
+						Value:       RootConfig.AntsClickhouseSSL,
+					},
 					&cli.StringFlag{
 						Name:        "nebula.db.connstring",
 						Usage:       "The connection string for the Postgres Nebula database",
@@ -154,6 +161,7 @@ func runQueenCommand(c *cli.Context) error {
 		RootConfig.AntsClickhouseDatabase,
 		RootConfig.AntsClickhouseUsername,
 		RootConfig.AntsClickhousePassword,
+		RootConfig.AntsClickhouseSSL,
 	)
 
 	if err != nil {
