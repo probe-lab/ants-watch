@@ -3,24 +3,30 @@ package db
 import (
 	"context"
 	"crypto/tls"
-	"golang.org/x/net/proxy"
+	"fmt"
 	"net"
-	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	mt "github.com/probe-lab/ants-watch/metrics"
+	logging "github.com/ipfs/go-log/v2"
+	"golang.org/x/net/proxy"
 )
 
-type Client struct {
-	ctx  context.Context
-	conn driver.Conn
+var logger = logging.Logger("db")
 
-	telemetry *mt.Telemetry
+type Client interface {
+	Ping(ctx context.Context) error
+	BulkInsertRequests(ctx context.Context, requests []*Request) error
 }
 
-func NewDatabaseClient(ctx context.Context, address, database, username, password string, ssl bool) (*Client, error) {
-	logger.Infoln("Creating new database client...")
+type ClickhouseClient struct {
+	driver.Conn
+}
+
+var _ Client = (*ClickhouseClient)(nil)
+
+func NewClient(address, database, username, password string, ssl bool) (*ClickhouseClient, error) {
+	logger.Infoln("Creating new clickhouse client...")
 
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{address},
@@ -29,7 +35,6 @@ func NewDatabaseClient(ctx context.Context, address, database, username, passwor
 			Username: username,
 			Password: password,
 		},
-		Debug: true,
 		DialContext: func(ctx context.Context, addr string) (net.Conn, error) {
 			var d proxy.ContextDialer
 			if ssl {
@@ -41,54 +46,38 @@ func NewDatabaseClient(ctx context.Context, address, database, username, passwor
 			return d.DialContext(ctx, "tcp", addr)
 		},
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
-	if err := conn.Ping(ctx); err != nil {
-		return nil, err
+	client := &ClickhouseClient{
+		Conn: conn,
 	}
 
-	return &Client{
-		ctx:  ctx,
-		conn: conn,
-	}, nil
+	return client, nil
 }
 
-type BatchRequest struct {
-	ctx context.Context
-
-	insertStatement string
-
-	conn  driver.Conn
-	batch driver.Batch
-}
-
-func NewBatch(ctx context.Context, conn driver.Conn, insertStatement string) (*BatchRequest, error) {
-	batch, err := conn.PrepareBatch(ctx, insertStatement, driver.WithReleaseConnection())
+func (c *ClickhouseClient) BulkInsertRequests(ctx context.Context, requests []*Request) error {
+	batch, err := c.Conn.PrepareBatch(ctx, "INSERT INTO requests", driver.WithReleaseConnection())
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("prepare batch: %w", err)
 	}
 
-	return &BatchRequest{
-		ctx:             ctx,
-		insertStatement: insertStatement,
-		conn:            conn,
-		batch:           batch,
-	}, nil
-}
-
-func (b *BatchRequest) Append(id, antMultihash, remoteMultihash, agentVersion string, protocols []string, startedAt time.Time, requestType, keyMultihash string, multiAddresses []string) error {
-	return b.batch.Append(
-		id,
-		antMultihash,
-		remoteMultihash,
-		agentVersion,
-		protocols,
-		startedAt,
-		requestType,
-		keyMultihash,
-		multiAddresses,
-	)
+	for _, r := range requests {
+		err = batch.Append(
+			r.UUID.String(),
+			r.AntID.String(),
+			r.RemoteID.String(),
+			r.AgentVersion,
+			r.Protocols,
+			r.StartedAt,
+			r.Type,
+			r.KeyID,
+			r.MultiAddresses,
+		)
+		if err != nil {
+			return fmt.Errorf("append request to batch: %w", err)
+		}
+	}
+	return batch.Send()
 }

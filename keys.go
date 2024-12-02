@@ -27,7 +27,7 @@ func (db *KeysDB) readKeysFromFile() *trie.Trie[bit256.Key, crypto.PrivKey] {
 	keysTrie := trie.New[bit256.Key, crypto.PrivKey]()
 
 	// load file
-	file, err := os.OpenFile(db.filepath, os.O_RDONLY, 0600)
+	file, err := os.OpenFile(db.filepath, os.O_RDONLY, 0o600)
 	if err != nil {
 		logger.Warn("Couldn't open file", db.filepath, ":", err)
 		return keysTrie
@@ -66,7 +66,7 @@ func (db *KeysDB) readKeysFromFile() *trie.Trie[bit256.Key, crypto.PrivKey] {
 }
 
 func (db *KeysDB) writeKeysToFile(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey]) {
-	file, err := os.OpenFile(db.filepath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	file, err := os.OpenFile(db.filepath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		logger.Warn("Couldn't open file", db.filepath, ":", err)
 		return
@@ -99,7 +99,6 @@ func integrateKeysIntoTrie(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey], keys
 		}
 
 		pid, err := peer.IDFromPrivateKey(key)
-
 		if err != nil {
 			logger.Warnf("Error getting peer ID: %v", err)
 			continue

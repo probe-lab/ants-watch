@@ -3,131 +3,119 @@ package ants
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/hashicorp/golang-lru/v2"
 	ds "github.com/ipfs/go-datastore"
-	dssync "github.com/ipfs/go-datastore/sync"
+	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p-kad-dht/antslog"
-	kadpb "github.com/libp2p/go-libp2p-kad-dht/pb"
+	"github.com/libp2p/go-libp2p-kad-dht/ants"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
+	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/go-libdht/kad"
 	"github.com/probe-lab/go-libdht/kad/key"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 	"github.com/probe-lab/go-libdht/kad/trie"
-	"github.com/volatiletech/null/v8"
-
-	"github.com/patrickmn/go-cache"
-	"github.com/probe-lab/ants-watch/db"
-	"github.com/probe-lab/ants-watch/db/models"
 )
 
 var logger = log.Logger("ants-queen")
 
+type QueenConfig struct {
+	KeysDBPath         string
+	NPorts             int
+	FirstPort          int
+	UPnP               bool
+	BatchSize          int
+	BatchTime          time.Duration
+	CrawlInterval      time.Duration
+	CacheSize          int
+	NebulaDBConnString string
+}
+
 type Queen struct {
+	cfg *QueenConfig
+
 	nebulaDB *NebulaDB
 	keysDB   *KeysDB
 
-	peerstore   peerstore.Peerstore
-	datastore   ds.Batching
-	agentsCache *cache.Cache
+	peerstore      peerstore.Peerstore
+	datastore      ds.Batching
+	agentsCache    *lru.Cache[string, string]
+	protocolsCache *lru.Cache[string, []protocol.ID]
 
-	ants     []*Ant
-	antsLogs chan antslog.RequestLog
+	ants       []*Ant
+	antsEvents chan ants.RequestEvent
 
-	upnp bool
 	// portsOccupancy is a slice of bools that represent the occupancy of the ports
 	// false corresponds to an available port, true to an occupied port
 	// the first item of the slice corresponds to the firstPort
-	portsOccupancy []bool
-	firstPort      uint16
-
-	clickhouseClient *db.Client
-
-	resolveBatchSize int
-	resolveBatchTime int // in sec
+	portsOccupancy   []bool
+	clickhouseClient db.Client
 }
 
-func NewQueen(ctx context.Context, dbConnString string, keysDbPath string, nPorts, firstPort uint16, clickhouseClient *db.Client) (*Queen, error) {
-	nebulaDB := NewNebulaDB(dbConnString)
-	keysDB := NewKeysDB(keysDbPath)
-	peerstore, err := pstoremem.NewPeerstore()
+func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
+	ps, err := pstoremem.NewPeerstore()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating peerstore: %w", err)
+	}
+
+	ldb, err := leveldb.NewDatastore("", nil) // empty string means in-memory
+	if err != nil {
+		return nil, fmt.Errorf("creating in-memory leveldb: %w", err)
+	}
+
+	agentsCache, err := lru.New[string, string](cfg.CacheSize)
+	if err != nil {
+		return nil, fmt.Errorf("init agents cache: %w", err)
+	}
+
+	protocolsCache, err := lru.New[string, []protocol.ID](cfg.CacheSize)
+	if err != nil {
+		return nil, fmt.Errorf("init agents cache: %w", err)
 	}
 
 	queen := &Queen{
-		nebulaDB:         nebulaDB,
-		keysDB:           keysDB,
-		peerstore:        peerstore,
-		datastore:        dssync.MutexWrap(ds.NewMapDatastore()),
+		cfg:              cfg,
+		nebulaDB:         NewNebulaDB(cfg.NebulaDBConnString, cfg.CrawlInterval),
+		keysDB:           NewKeysDB(cfg.KeysDBPath),
+		peerstore:        ps,
+		datastore:        ldb,
 		ants:             []*Ant{},
-		antsLogs:         make(chan antslog.RequestLog, 1024),
-		agentsCache:      cache.New(4*24*time.Hour, time.Hour), // 4 days of cache, clean every hour
-		upnp:             true,
-		resolveBatchSize: getBatchSize(),
-		resolveBatchTime: getBatchTime(),
+		antsEvents:       make(chan ants.RequestEvent, 1024),
+		agentsCache:      agentsCache,
+		protocolsCache:   protocolsCache,
 		clickhouseClient: clickhouseClient,
+		portsOccupancy:   make([]bool, cfg.NPorts),
 	}
-
-	if nPorts != 0 {
-		queen.upnp = false
-		queen.firstPort = firstPort
-		queen.portsOccupancy = make([]bool, nPorts)
-	}
-
-	logger.Info("queen created")
 
 	return queen, nil
 }
 
-func getBatchSize() int {
-	batchSizeEnvVal := os.Getenv("BATCH_SIZE")
-	if len(batchSizeEnvVal) == 0 {
-		batchSizeEnvVal = "1000"
-	}
-	batchSize, err := strconv.Atoi(batchSizeEnvVal)
-	if err != nil {
-		logger.Errorln("BATCH_SIZE should be an integer")
-	}
-	return batchSize
-}
-
-func getBatchTime() int {
-	batchTimeEnvVal := os.Getenv("BATCH_TIME")
-	if len(batchTimeEnvVal) == 0 {
-		batchTimeEnvVal = "30"
-	}
-	batchTime, err := strconv.Atoi(batchTimeEnvVal)
-	if err != nil {
-		logger.Errorln("BATCH_TIME should be an integer")
-	}
-	return batchTime
-}
-
-func (q *Queen) takeAvailablePort() (uint16, error) {
-	if q.upnp {
+func (q *Queen) takeAvailablePort() (int, error) {
+	if q.cfg.UPnP {
 		return 0, nil
 	}
+
 	for i, occupied := range q.portsOccupancy {
-		if !occupied {
-			q.portsOccupancy[i] = true
-			return q.firstPort + uint16(i), nil
+		if occupied {
+			continue
 		}
+		q.portsOccupancy[i] = true
+		return q.cfg.FirstPort + i, nil
 	}
+
 	return 0, fmt.Errorf("no available port")
 }
 
-func (q *Queen) freePort(port uint16) {
-	if !q.upnp {
-		q.portsOccupancy[port-q.firstPort] = false
+func (q *Queen) freePort(port int) {
+	if !q.cfg.UPnP {
+		q.portsOccupancy[port-q.cfg.FirstPort] = false
 	}
 }
 
@@ -135,9 +123,13 @@ func (q *Queen) Run(ctx context.Context) error {
 	logger.Debugln("Queen.Run started")
 	defer logger.Debugln("Queen.Run completing")
 
-	go q.consumeAntsLogs(ctx)
+	if err := q.nebulaDB.Open(ctx); err != nil {
+		return fmt.Errorf("opening nebula db: %w", err)
+	}
 
-	crawlTime := time.NewTicker(CRAWL_INTERVAL)
+	go q.consumeAntsEvents(ctx)
+
+	crawlTime := time.NewTicker(q.cfg.CrawlInterval)
 	defer crawlTime.Stop()
 
 	q.routine(ctx)
@@ -154,76 +146,88 @@ func (q *Queen) Run(ctx context.Context) error {
 	}
 }
 
-func (q *Queen) consumeAntsLogs(ctx context.Context) {
-	requests := make([]models.RequestsDenormalized, 0, q.resolveBatchSize)
+func (q *Queen) consumeAntsEvents(ctx context.Context) {
+	requests := make([]*db.Request, 0, q.cfg.BatchSize)
+
 	// bulk insert for every batch size or N seconds, whichever comes first
-	ticker := time.NewTicker(time.Duration(q.resolveBatchTime) * time.Second)
+	ticker := time.NewTicker(q.cfg.BatchTime)
 	defer ticker.Stop()
 
 	for {
 		select {
-
 		case <-ctx.Done():
 			logger.Debugln("Gracefully shutting down ants...")
 			logger.Debugln("Number of requests remaining to be inserted:", len(requests))
-			// if len(requests) > 0 {
-			// 	err := db.BulkInsertRequests(context.Background(), q.dbc.Handler, requests)
-			// 	if err != nil {
-			// 		logger.Fatalf("Error inserting remaining requests: %v", err)
-			// 	}
-			// }
+
+			if len(requests) > 0 {
+				if err := q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
+					logger.Errorf("Error inserting requests: %v", err)
+				}
+				requests = requests[:0]
+			}
 			return
 
-		case log := <-q.antsLogs:
-			reqType := kadpb.Message_MessageType(log.Type).String()
-			maddrs := q.peerstore.Addrs(log.Requester)
-			var agent string
-			peerstoreAgent, err := q.peerstore.Get(log.Requester, "AgentVersion")
-			if err != nil {
-				if peerstoreAgent, ok := q.agentsCache.Get(log.Requester.String()); ok {
-					agent = peerstoreAgent.(string)
-				} else {
-					agent = ""
-				}
+		case evt := <-q.antsEvents:
+
+			// transform multi addresses
+			maddrStrs := make([]string, len(evt.Maddrs))
+			for i, maddr := range evt.Maddrs {
+				maddrStrs[i] = maddr.String()
+			}
+
+			// cache agent version
+			if evt.AgentVersion == "" {
+				evt.AgentVersion, _ = q.agentsCache.Get(evt.Remote.String())
 			} else {
-				agent = peerstoreAgent.(string)
-				q.agentsCache.Set(log.Requester.String(), agent, 0)
+				q.agentsCache.Add(evt.Remote.String(), evt.AgentVersion)
 			}
 
-			protocols, _ := q.peerstore.GetProtocols(log.Requester)
-			protocolsAsStr := protocol.ConvertToStrings(protocols)
-
-			request := models.RequestsDenormalized{
-				RequestStartedAt: log.Timestamp,
-				RequestType:      reqType,
-				AntMultihash:     log.Self.String(),
-				PeerMultihash:    log.Requester.String(),
-				KeyMultihash:     log.Target.B58String(),
-				MultiAddresses:   db.MaddrsToAddrs(maddrs),
-				AgentVersion:     null.StringFrom(agent),
-				Protocols:        protocolsAsStr,
+			// cache protocols
+			var protocols []protocol.ID
+			if len(evt.Protocols) == 0 {
+				protocols, _ = q.protocolsCache.Get(evt.Remote.String())
+			} else {
+				protocols = evt.Protocols
+				q.protocolsCache.Add(evt.Remote.String(), evt.Protocols)
 			}
+			protocolStrs := protocol.ConvertToStrings(protocols)
+
+			uuidv7, err := uuid.NewV7()
+			if err != nil {
+				logger.Warn("Error generating uuid")
+				continue
+			}
+
+			request := &db.Request{
+				UUID:           uuidv7,
+				AntID:          evt.Self,
+				RemoteID:       evt.Remote,
+				Type:           evt.Type,
+				AgentVersion:   evt.AgentVersion,
+				Protocols:      protocolStrs,
+				StartedAt:      evt.Timestamp,
+				KeyID:          evt.Target.B58String(),
+				MultiAddresses: maddrStrs,
+			}
+
 			requests = append(requests, request)
-			if len(requests) >= q.resolveBatchSize {
-				// err = db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
-				// if err != nil {
-				// 	logger.Errorf("Error inserting requests: %v", err)
-				// }
-				// requests = requests[:0]
+
+			if len(requests) >= q.cfg.BatchSize {
+				if err = q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
+					logger.Errorf("Error inserting requests: %v", err)
+				}
+				requests = requests[:0]
 			}
 
 		case <-ticker.C:
-			if len(requests) > 0 {
-				// err := db.BulkInsertRequests(ctx, q.dbc.Handler, requests)
-				// if err != nil {
-				// 	logger.Fatalf("Error inserting requests: %v", err)
-				// }
-				// requests = requests[:0]
+			if len(requests) == 0 {
+				continue
 			}
 
-		default:
-			// against busy-looping since <-q.antsLogs is a busy chan
-			time.Sleep(10 * time.Millisecond)
+			if err := q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
+				logger.Errorf("Error inserting requests: %v", err)
+			}
+			requests = requests[:0]
 		}
 	}
 }
@@ -251,7 +255,7 @@ func (q *Queen) routine(ctx context.Context) {
 	}
 
 	// zones correspond to the prefixes of the tries that must be covered by an ant
-	zones := trieZones(networkTrie, BUCKET_SIZE)
+	zones := trieZones(networkTrie, bucketSize)
 	logger.Debugf("%d zones must be covered by ants", len(zones))
 
 	// convert string zone to bitstr.Key
@@ -301,7 +305,7 @@ func (q *Queen) routine(ctx context.Context) {
 			logger.Error("trying to spawn new ant: ")
 			continue
 		}
-		ant, err := SpawnAnt(ctx, key, q.peerstore, q.datastore, port, q.antsLogs)
+		ant, err := SpawnAnt(ctx, key, q.peerstore, q.datastore, port, q.antsEvents)
 		if err != nil {
 			logger.Warn("error creating ant", err)
 		}

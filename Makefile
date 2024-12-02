@@ -10,20 +10,17 @@ REPO_USER?=AWS
 REPO_REGION?=us-east-1
 
 
-
 tools:
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.15.2
-	go install github.com/volatiletech/sqlboiler/v4@v4.13.0
-	go install github.com/volatiletech/sqlboiler/v4/drivers/sqlboiler-psql@v4.13.0
-
-models:
-	sqlboiler --no-tests psql
 
 migrate-up:
-	migrate -database 'postgres://ants_watch:password@localhost:5432/ants_watch?sslmode=disable' -path db/migrations up
+	migrate -database 'clickhouse://localhost:9000?username=default&secure=false' -path db/migrations up
 
 migrate-down:
-	migrate -database 'postgres://ants_watch:password@localhost:5432/ants_watch?sslmode=disable' -path db/migrations down
+	migrate -database 'clickhouse://localhost:9000?username=default&secure=false' -path db/migrations down
+
+local-clickhouse:
+	docker run --name ants-clickhouse --rm -p 9000:9000 clickhouse/clickhouse-server
 
 .PHONY: build
 build:

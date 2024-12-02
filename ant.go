@@ -7,7 +7,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
-	antslog "github.com/libp2p/go-libp2p-kad-dht/antslog"
+	"github.com/libp2p/go-libp2p-kad-dht/ants"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -23,7 +23,7 @@ const (
 )
 
 type Ant struct {
-	port    uint16
+	port    int
 	dht     *kad.IpfsDHT
 	privKey crypto.PrivKey
 
@@ -32,7 +32,7 @@ type Ant struct {
 	UserAgent string
 }
 
-func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.Peerstore, datastore ds.Batching, port uint16, logsChan chan antslog.RequestLog) (*Ant, error) {
+func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.Peerstore, datastore ds.Batching, port int, logsChan chan ants.RequestEvent) (*Ant, error) {
 	pid, _ := peer.IDFromPrivateKey(privKey)
 	logger.Debugf("spawning ant. kadid: %s, peerid: %s", PeeridToKadid(pid).HexString(), pid)
 

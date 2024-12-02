@@ -16,6 +16,38 @@ import (
 
 var logger = logging.Logger("ants-queen")
 
+var rootConfig = struct {
+	AntsClickhouseAddress  string
+	AntsClickhouseDatabase string
+	AntsClickhouseUsername string
+	AntsClickhousePassword string
+	AntsClickhouseSSL      bool
+	NebulaDBConnString     string
+	KeyDBPath              string
+	NumPorts               int
+	FirstPort              int
+	UPnp                   bool
+	BatchSize              int
+	BatchTime              time.Duration
+	CrawlInterval          time.Duration
+	CacheSize              int
+}{
+	AntsClickhouseAddress:  "",
+	AntsClickhouseDatabase: "",
+	AntsClickhouseUsername: "",
+	AntsClickhousePassword: "",
+	AntsClickhouseSSL:      true,
+	NebulaDBConnString:     "",
+	KeyDBPath:              "keys.db",
+	NumPorts:               128,
+	FirstPort:              6000,
+	UPnp:                   false,
+	BatchSize:              1000,
+	BatchTime:              time.Second,
+	CrawlInterval:          120 * time.Minute,
+	CacheSize:              10_000,
+}
+
 func main() {
 	logging.SetLogLevel("ants-queen", "debug")
 	logging.SetLogLevel("dht", "error")
@@ -33,43 +65,71 @@ func main() {
 						Name:        "ants.clickhouse.address",
 						Usage:       "ClickHouse address containing the host and port, 127.0.0.1:9000",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_ADDRESS"},
-						Destination: &RootConfig.AntsClickhouseAddress,
-						Value:       RootConfig.AntsClickhouseAddress,
+						Destination: &rootConfig.AntsClickhouseAddress,
+						Value:       rootConfig.AntsClickhouseAddress,
 					},
 					&cli.StringFlag{
 						Name:        "ants.clickhouse.database",
 						Usage:       "The ClickHouse database where ants requests will be recorded",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_DATABASE"},
-						Destination: &RootConfig.AntsClickhouseDatabase,
-						Value:       RootConfig.AntsClickhouseDatabase,
+						Destination: &rootConfig.AntsClickhouseDatabase,
+						Value:       rootConfig.AntsClickhouseDatabase,
 					},
 					&cli.StringFlag{
 						Name:        "ants.clickhouse.username",
 						Usage:       "The ClickHouse user that has the prerequisite privileges to record the requests",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_USERNAME"},
-						Destination: &RootConfig.AntsClickhouseUsername,
-						Value:       RootConfig.AntsClickhouseUsername,
+						Destination: &rootConfig.AntsClickhouseUsername,
+						Value:       rootConfig.AntsClickhouseUsername,
 					},
 					&cli.StringFlag{
 						Name:        "ants.clickhouse.password",
 						Usage:       "The password for the ClickHouse user",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_PASSWORD"},
-						Destination: &RootConfig.AntsClickhousePassword,
-						Value:       RootConfig.AntsClickhousePassword,
+						Destination: &rootConfig.AntsClickhousePassword,
+						Value:       rootConfig.AntsClickhousePassword,
 					},
 					&cli.BoolFlag{
-						Name:        "ants.clickhouse.password",
+						Name:        "ants.clickhouse.ssl",
 						Usage:       "Whether to use SSL for the ClickHouse connection",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_SSL"},
-						Destination: &RootConfig.AntsClickhouseSSL,
-						Value:       RootConfig.AntsClickhouseSSL,
+						Destination: &rootConfig.AntsClickhouseSSL,
+						Value:       rootConfig.AntsClickhouseSSL,
 					},
 					&cli.StringFlag{
 						Name:        "nebula.db.connstring",
 						Usage:       "The connection string for the Postgres Nebula database",
 						EnvVars:     []string{"NEBULA_DB_CONNSTRING"},
-						Destination: &RootConfig.NebulaDBConnString,
-						Value:       RootConfig.NebulaDBConnString,
+						Destination: &rootConfig.NebulaDBConnString,
+						Value:       rootConfig.NebulaDBConnString,
+					},
+					&cli.IntFlag{
+						Name:        "batch.size",
+						Usage:       "The number of ants to request to store at a time",
+						EnvVars:     []string{"ANTS_BATCH_SIZE"},
+						Destination: &rootConfig.BatchSize,
+						Value:       rootConfig.BatchSize,
+					},
+					&cli.DurationFlag{
+						Name:        "batch.time",
+						Usage:       "The time to wait between batches",
+						EnvVars:     []string{"ANTS_BATCH_TIME"},
+						Destination: &rootConfig.BatchTime,
+						Value:       rootConfig.BatchTime,
+					},
+					&cli.DurationFlag{
+						Name:        "crawl.interval",
+						Usage:       "The time between two crawls",
+						EnvVars:     []string{"ANTS_CRAWL_INTERVAL"},
+						Destination: &rootConfig.CrawlInterval,
+						Value:       rootConfig.CrawlInterval,
+					},
+					&cli.IntFlag{
+						Name:        "cache.size",
+						Usage:       "How many agent versions and protocols should be cached in memory",
+						EnvVars:     []string{"ANTS_CACHE_SIZE"},
+						Destination: &rootConfig.CacheSize,
+						Value:       rootConfig.CacheSize,
 					},
 					&cli.PathFlag{
 						Name:    "key.db_path",
@@ -119,26 +179,40 @@ func main() {
 func runQueenCommand(c *cli.Context) error {
 	ctx := c.Context
 
-	client, err := db.NewDatabaseClient(
-		c.Context,
-		RootConfig.AntsClickhouseAddress,
-		RootConfig.AntsClickhouseDatabase,
-		RootConfig.AntsClickhouseUsername,
-		RootConfig.AntsClickhousePassword,
-		RootConfig.AntsClickhouseSSL,
+	// initializing new clickhouse client
+	client, err := db.NewClient(
+		rootConfig.AntsClickhouseAddress,
+		rootConfig.AntsClickhouseDatabase,
+		rootConfig.AntsClickhouseUsername,
+		rootConfig.AntsClickhousePassword,
+		rootConfig.AntsClickhouseSSL,
 	)
-
 	if err != nil {
 		logger.Errorln(err)
 		return fmt.Errorf("init database client: %w", err)
 	}
 
-	var queen *ants.Queen
-	if RootConfig.UPnp {
-		queen, err = ants.NewQueen(ctx, RootConfig.NebulaDBConnString, RootConfig.KeyDBPath, 0, 0, client)
-	} else {
-		queen, err = ants.NewQueen(ctx, RootConfig.NebulaDBConnString, RootConfig.KeyDBPath, uint16(RootConfig.NumPorts), uint16(RootConfig.FirstPort), client)
+	// pinging database to check availability
+	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pingCancel()
+	if err = client.Ping(pingCtx); err != nil {
+		return fmt.Errorf("ping clickhouse: %w", err)
 	}
+
+	queenCfg := &ants.QueenConfig{
+		KeysDBPath:         rootConfig.KeyDBPath,
+		NPorts:             rootConfig.NumPorts,
+		FirstPort:          rootConfig.FirstPort,
+		UPnP:               rootConfig.UPnp,
+		BatchSize:          rootConfig.BatchSize,
+		BatchTime:          rootConfig.BatchTime,
+		CrawlInterval:      rootConfig.CrawlInterval,
+		CacheSize:          rootConfig.CacheSize,
+		NebulaDBConnString: rootConfig.NebulaDBConnString,
+	}
+
+	// initializting queen
+	queen, err := ants.NewQueen(client, queenCfg)
 	if err != nil {
 		return fmt.Errorf("failed to create queen: %w", err)
 	}
