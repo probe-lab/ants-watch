@@ -1,0 +1,31 @@
+name: Deployment (prod)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Ants
+    uses: ./.github/workflows/test.yml
+    permissions:
+      id-token: write
+      contents: read
+
+  build_push:
+    name: Ants
+    uses: ./.github/workflows/build_push.yml
+    needs: test
+    permissions:
+      id-token: write
+      contents: read
+
+
+  deploy:
+    name: Ants
+    uses: ./.github/workflows/deploy.yml
+    needs: build_push
+    permissions:
+      id-token: write
+      contents: read
+    secrets:
+      slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}

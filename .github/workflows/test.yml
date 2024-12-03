@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  workflow_call:
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checking out repository code
+        uses: actions/checkout@v4
+
+      - name: Setting up Golang
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Checking Go fmt
+        run: |
+          if ! go fmt ./...; then
+            echo "Go fmt check failed"
+            exit 1
+          fi
+
+      - name: Running vet
+        run: go vet ./...
+
+      - name: Running Tests
+        run: go test ./...
