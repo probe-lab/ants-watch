@@ -10,10 +10,11 @@ import (
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 )
 
-const bucketSize = 20
-
-func PeeridToKadid(pid peer.ID) bit256.Key {
-	hasher, _ := mhreg.GetHasher(mh.SHA2_256)
+func PeerIDToKadID(pid peer.ID) bit256.Key {
+	hasher, err := mhreg.GetHasher(mh.SHA2_256)
+	if err != nil {
+		panic(err)
+	}
 	hasher.Write([]byte(pid))
 	return bit256.NewKey(hasher.Sum(nil))
 }

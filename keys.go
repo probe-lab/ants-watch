@@ -60,7 +60,7 @@ func (db *KeysDB) readKeysFromFile() *trie.Trie[bit256.Key, crypto.PrivKey] {
 		}
 
 		// Add to your keysTrie or equivalent data structure
-		keysTrie.Add(PeeridToKadid(pid), privKey)
+		keysTrie.Add(PeerIDToKadID(pid), privKey)
 	}
 	return keysTrie
 }
@@ -103,7 +103,7 @@ func integrateKeysIntoTrie(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey], keys
 			logger.Warnf("Error getting peer ID: %v", err)
 			continue
 		}
-		keysTrie.Add(PeeridToKadid(pid), key)
+		keysTrie.Add(PeerIDToKadID(pid), key)
 	}
 }
 
@@ -144,12 +144,12 @@ func getMatchingKeys(prefixes []bitstr.Key, keysTrie *trie.Trie[bit256.Key, cryp
 					continue
 				}
 				// check if the new key matches the prefix
-				if key.CommonPrefixLength(PeeridToKadid(pid), prefix) == prefix.BitLen() {
+				if key.CommonPrefixLength(PeerIDToKadID(pid), prefix) == prefix.BitLen() {
 					keys[i] = newKey
 					break
 				}
 				// add to keysTrie if not matching prefix
-				keysTrie.Add(PeeridToKadid(pid), newKey)
+				keysTrie.Add(PeerIDToKadID(pid), newKey)
 			}
 		}
 	}
