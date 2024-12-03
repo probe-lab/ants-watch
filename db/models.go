@@ -10,6 +10,7 @@ import (
 
 type Request struct {
 	UUID           uuid.UUID
+	QueenID        string
 	AntID          peer.ID
 	RemoteID       peer.ID
 	Type           pb.Message_MessageType
