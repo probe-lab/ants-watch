@@ -1,0 +1,93 @@
+name: Deployment (prod)
+
+on:
+  workflow_call:
+    secrets:
+      slack_webhook_url:
+        required: true
+
+# TODO: move to workflow inputs:
+env:
+  AWS_REGION: us-east-1
+  AWS_ROLE: arn:aws:iam::019120760881:role/prod-use1-github-oidc-role
+  AWS_ECS_TASK_DEFINITION: prod-use1-cmi-ants-celestia-watch-task
+  AWS_ECS_SERVICE: prod-use1-cmi-ants-celestia-watch
+  AWS_ECS_CLUSTER_NAME: default
+  AWS_ECR_REPOSITORY: probelab
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build_push
+    steps:
+      - name: Configuring AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE }}
+          role-session-name: deploy-ants
+
+      - name: Downloading latest Amazon ECS task definition
+        id: download
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.AWS_ECS_TASK_DEFINITION }} \
+            --query taskDefinition > task-definition.json
+          
+          # Extract downloaded task definition revision
+          REVISION=$(cat task-definition.json | jq -r '.revision')
+          
+          # Store task definition revision
+          echo "task_definition=${{ env.AWS_ECS_TASK_DEFINITION }}:$REVISION" >> $GITHUB_OUTPUT
+
+      # https://github.com/aws-actions/amazon-ecs-deploy-task-definition/issues/176
+      # This isn't critical but just avoids some warning messages in the next step
+      - name: Removing invalid task definition fields
+        run: |
+          cat task-definition.json | jq -r 'del(
+            .taskDefinitionArn,
+            .requiresAttributes,
+            .compatibilities,
+            .revision,
+            .status,
+            .registeredAt,
+            .registeredBy
+          )' > task-definition-cleaned.json
+
+      - name: Updating image tag of task definition ${{ steps.download.outputs.task_definition }}
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition-cleaned.json
+          container-name: prod-use1-cmi-ants-celestia-watch
+          image: ${{ needs.build_push.outputs.image_tag }}
+
+      - name: Deploying to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.AWS_ECS_SERVICE }}
+          cluster: ${{ env.AWS_ECS_CLUSTER_NAME }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15 # default is 30
+          propagate-tags: SERVICE
+          enable-ecs-managed-tags: true
+
+      - name: Publishing Success Notification to Slack
+        if: success()
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.slack_webhook_url }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "✅ Successfully deployed task definition ${{ steps.download.outputs.task_definition }}. <https://${{ env.AWS_REGION }}.console.aws.amazon.com/ecs/v2/clusters/${{ env.AWS_ECS_CLUSTER_NAME }}/services/${{ env.AWS_ECS_SERVICE }}/health|View Service>"
+
+      - name: Publishing Error Notification to Slack
+        if: failure()
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.slack_webhook_url }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "🚨 Deployment of task definition ${{ steps.download.outputs.task_definition }} failed. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>"

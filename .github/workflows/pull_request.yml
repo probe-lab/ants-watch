@@ -1,0 +1,12 @@
+name: Test, Build & Push (dev)
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    name: Ants
+    uses: ./.github/workflows/test.yml
+    permissions:
+      id-token: write
+      contents: read
