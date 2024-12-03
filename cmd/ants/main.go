@@ -17,35 +17,42 @@ import (
 var logger = logging.Logger("ants-queen")
 
 var rootConfig = struct {
-	AntsClickhouseAddress  string
-	AntsClickhouseDatabase string
-	AntsClickhouseUsername string
-	AntsClickhousePassword string
-	AntsClickhouseSSL      bool
-	NebulaDBConnString     string
-	KeyDBPath              string
-	NumPorts               int
-	FirstPort              int
-	UPnp                   bool
-	BatchSize              int
-	BatchTime              time.Duration
-	CrawlInterval          time.Duration
-	CacheSize              int
+	ClickhouseAddress  string
+	ClickhouseDatabase string
+	ClickhouseUsername string
+	ClickhousePassword string
+	ClickhouseSSL      bool
+	NebulaDBConnString string
+	KeyDBPath          string
+	NumPorts           int
+	FirstPort          int
+	UPnp               bool
+	BatchSize          int
+	BatchTime          time.Duration
+	CrawlInterval      time.Duration
+	CacheSize          int
+	BucketSize         int
+	UserAgent          string
+	ProtocolPrefix     string
+	QueenID            string
 }{
-	AntsClickhouseAddress:  "",
-	AntsClickhouseDatabase: "",
-	AntsClickhouseUsername: "",
-	AntsClickhousePassword: "",
-	AntsClickhouseSSL:      true,
-	NebulaDBConnString:     "",
-	KeyDBPath:              "keys.db",
-	NumPorts:               128,
-	FirstPort:              6000,
-	UPnp:                   false,
-	BatchSize:              1000,
-	BatchTime:              time.Second,
-	CrawlInterval:          120 * time.Minute,
-	CacheSize:              10_000,
+	ClickhouseAddress:  "",
+	ClickhouseDatabase: "",
+	ClickhouseUsername: "",
+	ClickhousePassword: "",
+	ClickhouseSSL:      true,
+	NebulaDBConnString: "",
+	KeyDBPath:          "keys.db",
+	NumPorts:           128,
+	FirstPort:          6000,
+	UPnp:               false,
+	BatchSize:          1000,
+	BatchTime:          time.Second,
+	CrawlInterval:      120 * time.Minute,
+	CacheSize:          10_000,
+	BucketSize:         20,
+	UserAgent:          "celestiant",
+	QueenID:            "",
 }
 
 func main() {
@@ -62,44 +69,44 @@ func main() {
 				Usage: "Starts the queen service",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:        "ants.clickhouse.address",
+						Name:        "clickhouse.address",
 						Usage:       "ClickHouse address containing the host and port, 127.0.0.1:9000",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_ADDRESS"},
-						Destination: &rootConfig.AntsClickhouseAddress,
-						Value:       rootConfig.AntsClickhouseAddress,
+						Destination: &rootConfig.ClickhouseAddress,
+						Value:       rootConfig.ClickhouseAddress,
 					},
 					&cli.StringFlag{
-						Name:        "ants.clickhouse.database",
+						Name:        "clickhouse.database",
 						Usage:       "The ClickHouse database where ants requests will be recorded",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_DATABASE"},
-						Destination: &rootConfig.AntsClickhouseDatabase,
-						Value:       rootConfig.AntsClickhouseDatabase,
+						Destination: &rootConfig.ClickhouseDatabase,
+						Value:       rootConfig.ClickhouseDatabase,
 					},
 					&cli.StringFlag{
-						Name:        "ants.clickhouse.username",
+						Name:        "clickhouse.username",
 						Usage:       "The ClickHouse user that has the prerequisite privileges to record the requests",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_USERNAME"},
-						Destination: &rootConfig.AntsClickhouseUsername,
-						Value:       rootConfig.AntsClickhouseUsername,
+						Destination: &rootConfig.ClickhouseUsername,
+						Value:       rootConfig.ClickhouseUsername,
 					},
 					&cli.StringFlag{
-						Name:        "ants.clickhouse.password",
+						Name:        "clickhouse.password",
 						Usage:       "The password for the ClickHouse user",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_PASSWORD"},
-						Destination: &rootConfig.AntsClickhousePassword,
-						Value:       rootConfig.AntsClickhousePassword,
+						Destination: &rootConfig.ClickhousePassword,
+						Value:       rootConfig.ClickhousePassword,
 					},
 					&cli.BoolFlag{
-						Name:        "ants.clickhouse.ssl",
+						Name:        "clickhouse.ssl",
 						Usage:       "Whether to use SSL for the ClickHouse connection",
 						EnvVars:     []string{"ANTS_CLICKHOUSE_SSL"},
-						Destination: &rootConfig.AntsClickhouseSSL,
-						Value:       rootConfig.AntsClickhouseSSL,
+						Destination: &rootConfig.ClickhouseSSL,
+						Value:       rootConfig.ClickhouseSSL,
 					},
 					&cli.StringFlag{
-						Name:        "nebula.db.connstring",
+						Name:        "nebula.connstring",
 						Usage:       "The connection string for the Postgres Nebula database",
-						EnvVars:     []string{"NEBULA_DB_CONNSTRING"},
+						EnvVars:     []string{"ANTS_NEBULA_CONNSTRING"},
 						Destination: &rootConfig.NebulaDBConnString,
 						Value:       rootConfig.NebulaDBConnString,
 					},
@@ -132,9 +139,9 @@ func main() {
 						Value:       rootConfig.CacheSize,
 					},
 					&cli.PathFlag{
-						Name:        "key.db_path",
+						Name:        "key.path",
 						Usage:       "The path to the data store containing the keys",
-						EnvVars:     []string{"KEY_DB_PATH"},
+						EnvVars:     []string{"ANTS_KEY_PATH"},
 						Destination: &rootConfig.KeyDBPath,
 						Value:       rootConfig.KeyDBPath,
 					},
@@ -158,6 +165,28 @@ func main() {
 						EnvVars:     []string{"ANTS_UPNP"},
 						Destination: &rootConfig.UPnp,
 						Value:       rootConfig.UPnp,
+					},
+					&cli.IntFlag{
+						Name:        "bucket.size",
+						Usage:       "The bucket size for the ants DHT",
+						EnvVars:     []string{"ANTS_BUCKET_SIZE"},
+						Destination: &rootConfig.BucketSize,
+						Value:       rootConfig.BucketSize,
+					},
+					&cli.StringFlag{
+						Name:        "user.agent",
+						Usage:       "The user agent to use for the ants hosts",
+						EnvVars:     []string{"ANTS_USER_AGENT"},
+						Destination: &rootConfig.UserAgent,
+						Value:       rootConfig.UserAgent,
+					},
+					&cli.StringFlag{
+						Name:        "queen.id",
+						Usage:       "The ID for the queen that's orchestrating the ants",
+						EnvVars:     []string{"ANTS_QUEEN_ID"},
+						Destination: &rootConfig.QueenID,
+						Value:       rootConfig.QueenID,
+						DefaultText: "generated",
 					},
 				},
 				Action: runQueenCommand,
@@ -187,16 +216,15 @@ func main() {
 func runQueenCommand(c *cli.Context) error {
 	ctx := c.Context
 
-	// initializing new clickhouse client
+	// initializing a new clickhouse client
 	client, err := db.NewClient(
-		rootConfig.AntsClickhouseAddress,
-		rootConfig.AntsClickhouseDatabase,
-		rootConfig.AntsClickhouseUsername,
-		rootConfig.AntsClickhousePassword,
-		rootConfig.AntsClickhouseSSL,
+		rootConfig.ClickhouseAddress,
+		rootConfig.ClickhouseDatabase,
+		rootConfig.ClickhouseUsername,
+		rootConfig.ClickhousePassword,
+		rootConfig.ClickhouseSSL,
 	)
 	if err != nil {
-		logger.Errorln(err)
 		return fmt.Errorf("init database client: %w", err)
 	}
 
@@ -217,12 +245,14 @@ func runQueenCommand(c *cli.Context) error {
 		CrawlInterval:      rootConfig.CrawlInterval,
 		CacheSize:          rootConfig.CacheSize,
 		NebulaDBConnString: rootConfig.NebulaDBConnString,
+		BucketSize:         rootConfig.BucketSize,
+		UserAgent:          rootConfig.UserAgent,
 	}
 
-	// initializting queen
+	// initializing queen
 	queen, err := ants.NewQueen(client, queenCfg)
 	if err != nil {
-		return fmt.Errorf("failed to create queen: %w", err)
+		return fmt.Errorf("create queen: %w", err)
 	}
 
 	errChan := make(chan error, 1)
