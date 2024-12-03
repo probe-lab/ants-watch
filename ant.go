@@ -22,21 +22,54 @@ const (
 	userAgent   = "celestiant"
 )
 
-type Ant struct {
-	port    int
-	dht     *kad.IpfsDHT
-	privKey crypto.PrivKey
-
-	Host      host.Host
-	KadId     bit256.Key
-	UserAgent string
+type AntConfig struct {
+	PrivateKey     crypto.PrivKey
+	UserAgent      string
+	Port           int
+	ProtocolPrefix string
+	BootstrapPeers []peer.AddrInfo
+	EventsChan     chan ants.RequestEvent
 }
 
-func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.Peerstore, datastore ds.Batching, port int, logsChan chan ants.RequestEvent) (*Ant, error) {
-	pid, _ := peer.IDFromPrivateKey(privKey)
-	logger.Debugf("spawning ant. kadid: %s, peerid: %s", PeeridToKadid(pid).HexString(), pid)
+func (cfg *AntConfig) Validate() error {
+	if cfg.PrivateKey == nil {
+		return fmt.Errorf("no ant private key given")
+	}
 
-	portStr := fmt.Sprint(port)
+	if cfg.UserAgent == "" {
+		return fmt.Errorf("user agent is not set")
+	}
+
+	if cfg.ProtocolPrefix == "" {
+		return fmt.Errorf("protocol prefix is not set")
+	}
+
+	if len(cfg.BootstrapPeers) == 0 {
+		return fmt.Errorf("bootstrap peers are not set")
+	}
+
+	if cfg.EventsChan == nil {
+		return fmt.Errorf("events channel is not set")
+	}
+
+	return nil
+}
+
+type Ant struct {
+	cfg   *AntConfig
+	host  host.Host
+	dht   *kad.IpfsDHT
+	kadID bit256.Key
+}
+
+func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *AntConfig) (*Ant, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("no config given")
+	} else if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	portStr := fmt.Sprint(cfg.Port)
 
 	// taken from github.com/celestiaorg/celestia-node/nodebuilder/p2p/config.go
 	// ports are assigned automatically
@@ -51,43 +84,40 @@ func SpawnAnt(ctx context.Context, privKey crypto.PrivKey, peerstore peerstore.P
 
 	opts := []libp2p.Option{
 		libp2p.UserAgent(userAgent),
-		libp2p.Identity(privKey),
-		libp2p.Peerstore(peerstore),
+		libp2p.Identity(cfg.PrivateKey),
+		libp2p.Peerstore(ps),
 		libp2p.DisableRelay(),
-
 		libp2p.ListenAddrStrings(listenAddrs...),
 	}
 
-	if port == 0 {
+	if cfg.Port == 0 {
 		opts = append(opts, libp2p.NATPortMap()) // enable NAT port mapping if no port is specified
 	}
 
 	h, err := libp2p.New(opts...)
 	if err != nil {
-		logger.Warn("unable to create libp2p host: ", err)
-		return nil, err
+		return nil, fmt.Errorf("new libp2p host: %w", err)
 	}
 
 	dhtOpts := []kad.Option{
 		kad.Mode(kad.ModeServer),
-		kad.BootstrapPeers(BootstrapPeers(celestiaNet)...),
-		kad.ProtocolPrefix(protocol.ID(fmt.Sprintf("/celestia/%s", celestiaNet))),
-		kad.Datastore(datastore),
-		kad.RequestsLogChan(logsChan),
+		kad.BootstrapPeers(cfg.BootstrapPeers...),
+		kad.ProtocolPrefix(protocol.ID(cfg.ProtocolPrefix)),
+		kad.Datastore(ds),
+		kad.RequestsLogChan(cfg.EventsChan),
 	}
 	dht, err := kad.New(ctx, h, dhtOpts...)
 	if err != nil {
-		logger.Warn("unable to create libp2p dht: ", err)
-		return nil, err
+		return nil, fmt.Errorf("new libp2p dht: %w", err)
 	}
 
+	logger.Debugf("spawned ant. kadid: %s, peerid: %s", PeerIDToKadID(h.ID()).HexString(), h.ID())
+
 	ant := &Ant{
-		Host:      h,
-		dht:       dht,
-		privKey:   privKey,
-		KadId:     PeeridToKadid(h.ID()),
-		port:      port,
-		UserAgent: userAgent,
+		cfg:   cfg,
+		host:  h,
+		dht:   dht,
+		kadID: PeerIDToKadID(h.ID()),
 	}
 
 	go dht.Bootstrap(ctx)
@@ -100,5 +130,5 @@ func (a *Ant) Close() error {
 	if err != nil {
 		return err
 	}
-	return a.Host.Close()
+	return a.host.Close()
 }

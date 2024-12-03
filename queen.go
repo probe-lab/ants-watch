@@ -308,20 +308,23 @@ func (q *Queen) routine(ctx context.Context) {
 			logger.Error("trying to spawn new ant: ")
 			continue
 		}
-		ant, err := SpawnAnt(ctx, key, q.peerstore, q.datastore, port, q.antsEvents)
+
+		antCfg := &AntConfig{
+			PrivateKey:     key,
+			UserAgent:      q.cfg.UserAgent,
+			Port:           port,
+			ProtocolPrefix: fmt.Sprintf("/celestia/%s", celestiaNet), // TODO: parameterize
+			BootstrapPeers: BootstrapPeers(celestiaNet),              // TODO: parameterize
+			EventsChan:     q.antsEvents,
+		}
+
+		ant, err := SpawnAnt(ctx, q.peerstore, q.datastore, antCfg)
 		if err != nil {
 			logger.Warn("error creating ant", err)
+			continue
 		}
-		q.ants = append(q.ants, ant)
-	}
 
-	for _, ant := range q.ants {
-		logger.Debugf("Upserting ant: %v\n", ant.Host.ID().String())
-		// antID, err := q.dbc.UpsertPeer(ctx, ant.Host.ID().String(), null.StringFrom(ant.UserAgent), nil, time.Now())
-		if err != nil {
-			logger.Errorf("Couldn't upsert")
-			// logger.Errorf("antID: %d could not be inserted because of %v", antID, err)
-		}
+		q.ants = append(q.ants, ant)
 	}
 
 	logger.Debugf("ants count: %d", len(q.ants))
