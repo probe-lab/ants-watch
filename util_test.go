@@ -18,11 +18,11 @@ func TestBitstrToBit256(t *testing.T) {
 	want := bit256.NewKey(target[:])
 	require.Equal(t, want, got)
 
-	strKey = bitstr.Key("000011110000") // 0x0f0
+	strKey = "000011110000" // 0x0f0
 	got = bitstrToBit256(strKey, padding[:])
 	require.Equal(t, want, got)
 
-	strKey = bitstr.Key("111") // 0xe
+	strKey = "111" // 0xe
 	padding[0] = 0x0f
 	got = bitstrToBit256(strKey, padding[:])
 	target[0] = 0xef

@@ -24,7 +24,7 @@ func TestWriteReadKeys(t *testing.T) {
 		require.NoError(t, err)
 		pid, err := peer.IDFromPrivateKey(priv)
 		require.NoError(t, err)
-		keysTrie.Add(PeeridToKadid(pid), priv)
+		keysTrie.Add(PeerIDToKadID(pid), priv)
 	}
 
 	db := NewKeysDB(filename)
@@ -77,7 +77,7 @@ func TestKeysDB(t *testing.T) {
 	for i, prefix := range prefixes {
 		pid, err := peer.IDFromPrivateKey(privKeys[i])
 		require.NoError(t, err)
-		require.Equal(t, prefix.BitLen(), key.CommonPrefixLength(PeeridToKadid(pid), prefix))
+		require.Equal(t, prefix.BitLen(), key.CommonPrefixLength(PeerIDToKadID(pid), prefix))
 	}
 
 	// check that the keys are not reused
@@ -102,7 +102,7 @@ func TestReturnKeysToEmptyTrie(t *testing.T) {
 
 	pid, err := peer.IDFromPrivateKey(key)
 	require.NoError(t, err)
-	found, foundKey := trie.Find(keysTrie, PeeridToKadid(pid))
+	found, foundKey := trie.Find(keysTrie, PeerIDToKadID(pid))
 	require.True(t, found)
 	require.Equal(t, key, foundKey)
 }
