@@ -3,16 +3,22 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/urfave/cli/v2"
 )
 
+var healthConfig = struct {
+	MetricsHost string
+	MetricsPort int
+}{
+	MetricsHost: "127.0.0.1",
+	MetricsPort: 5999, // one below the FirstPort to not accidentally override it
+}
+
 func HealthCheck(c *cli.Context) error {
 	endpoint := fmt.Sprintf(
-		"http://%s:%s/health",
-		os.Getenv("METRICS_HOST"),
-		os.Getenv("METRICS_PORT"),
+		"http://%s:%d/metrics",
+		healthConfig.MetricsHost, healthConfig.MetricsPort,
 	)
 	req, err := http.NewRequestWithContext(c.Context, http.MethodGet, endpoint, nil)
 	if err != nil {
