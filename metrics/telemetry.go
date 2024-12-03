@@ -8,10 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
-	"runtime"
 
+	"github.com/ipfs/go-log/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
@@ -24,34 +23,57 @@ import (
 	"go.uber.org/atomic"
 )
 
+var logger = log.Logger("telemetry")
+
 const (
 	MeterName  = "github.com/probe-lab/ants-watch"
 	TracerName = "github.com/probe-lab/ants-watch"
 )
 
 type Telemetry struct {
-	Tracer                 trace.Tracer
-	CacheQueriesCount      metric.Int64Counter
-	InsertRequestHistogram metric.Int64Histogram
+	Tracer                  trace.Tracer
+	AntsCountGauge          metric.Int64Gauge
+	BulkInsertCounter       metric.Int64Counter
+	BulkInsertSizeHist      metric.Int64Histogram
+	BulkInsertLatencyMsHist metric.Int64Histogram
+	CacheHitCounter         metric.Int64Counter
 }
 
 func NewTelemetry(tp trace.TracerProvider, mp metric.MeterProvider) (*Telemetry, error) {
 	meter := mp.Meter(MeterName)
 
-	cacheQueriesCount, err := meter.Int64Counter("cache_queries", metric.WithDescription("Number of queries to the LRU caches"))
+	antsCountGauge, err := meter.Int64Gauge("ants_count", metric.WithDescription("Number of running ants"))
 	if err != nil {
-		return nil, fmt.Errorf("cache_queries counter: %w", err)
+		return nil, fmt.Errorf("ants_count gauge: %w", err)
 	}
 
-	insertRequestHistogram, err := meter.Int64Histogram("insert_request_timing", metric.WithDescription("Histogram of database query times for request insertions"), metric.WithUnit("milliseconds"))
+	bulkInsertCounter, err := meter.Int64Counter("bulk_insert_count", metric.WithDescription("Number of bulk inserts"))
 	if err != nil {
-		return nil, fmt.Errorf("cache_queries counter: %w", err)
+		return nil, fmt.Errorf("bulk_insert_count gauge: %w", err)
+	}
+
+	bulkInsertSizeHist, err := meter.Int64Histogram("bulk_insert_size", metric.WithDescription("Size of bulk inserts"), metric.WithExplicitBucketBoundaries(0, 10, 50, 100, 500, 1000))
+	if err != nil {
+		return nil, fmt.Errorf("bulk_insert_size histogram: %w", err)
+	}
+
+	bulkInsertLatencyMsHist, err := meter.Int64Histogram("bulk_insert_latency", metric.WithDescription("Latency of bulk inserts (ms)"), metric.WithUnit("ms"))
+	if err != nil {
+		return nil, fmt.Errorf("bulk_insert_latency histogram: %w", err)
+	}
+
+	cacheHitCounter, err := meter.Int64Counter("cache_hit_count", metric.WithDescription("Number of cache hits"))
+	if err != nil {
+		return nil, fmt.Errorf("cache_hit_counter gauge: %w", err)
 	}
 
 	return &Telemetry{
-		Tracer:                 tp.Tracer(TracerName),
-		CacheQueriesCount:      cacheQueriesCount,
-		InsertRequestHistogram: insertRequestHistogram,
+		Tracer:                  tp.Tracer(TracerName),
+		BulkInsertCounter:       bulkInsertCounter,
+		BulkInsertSizeHist:      bulkInsertSizeHist,
+		BulkInsertLatencyMsHist: bulkInsertLatencyMsHist,
+		CacheHitCounter:         cacheHitCounter,
+		AntsCountGauge:          antsCountGauge,
 	}, nil
 }
 
@@ -103,14 +125,11 @@ func NewTracerProvider(ctx context.Context, host string, port int) (trace.Tracer
 // `ants health`.
 func ListenAndServe(host string, port int) {
 	addr := fmt.Sprintf("%s:%d", host, port)
-	log.WithField("addr", addr).Debugln("Starting telemetry endpoint")
-
-	// profile 1% of contention events
-	runtime.SetMutexProfileFraction(1)
+	logger.Debugln("Starting telemetry endpoint", "addr", addr)
 
 	http.Handle("/metrics", promhttp.Handler())
 	http.HandleFunc("/health", func(rw http.ResponseWriter, req *http.Request) {
-		log.Debugln("Responding to health check")
+		logger.Debugln("Responding to health check")
 		if HealthStatus.Load() {
 			rw.WriteHeader(http.StatusOK)
 		} else {
@@ -118,7 +137,8 @@ func ListenAndServe(host string, port int) {
 		}
 	})
 
+	logger.Info("Starting prometheus server", "addr", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.WithError(err).Warnln("Error serving prometheus")
+		logger.Warnln("Error serving prometheus", "err", err)
 	}
 }

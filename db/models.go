@@ -19,5 +19,4 @@ type Request struct {
 	StartedAt      time.Time
 	KeyID          string
 	MultiAddresses []string
-	IsSelfLookup   bool
 }

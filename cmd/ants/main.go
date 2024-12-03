@@ -9,14 +9,19 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/urfave/cli/v2"
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/probe-lab/ants-watch"
 	"github.com/probe-lab/ants-watch/db"
-	"github.com/urfave/cli/v2"
+	"github.com/probe-lab/ants-watch/metrics"
 )
 
 var logger = logging.Logger("ants-queen")
 
 var rootConfig = struct {
+	MetricsHost        string
+	MetricsPort        int
 	ClickhouseAddress  string
 	ClickhouseDatabase string
 	ClickhouseUsername string
@@ -36,6 +41,8 @@ var rootConfig = struct {
 	ProtocolPrefix     string
 	QueenID            string
 }{
+	MetricsHost:        "127.0.0.1",
+	MetricsPort:        5999, // one below the FirstPort to not accidentally override it
 	ClickhouseAddress:  "",
 	ClickhouseDatabase: "",
 	ClickhouseUsername: "",
@@ -68,6 +75,20 @@ func main() {
 				Name:  "queen",
 				Usage: "Starts the queen service",
 				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:        "metrics.host",
+						Usage:       "On which host to expose the metrics",
+						EnvVars:     []string{"ANTS_METRICS_HOST"},
+						Destination: &rootConfig.MetricsHost,
+						Value:       rootConfig.MetricsHost,
+					},
+					&cli.IntFlag{
+						Name:        "metrics.port",
+						Usage:       "On which port to expose the metrics",
+						EnvVars:     []string{"ANTS_METRICS_PORT"},
+						Destination: &rootConfig.MetricsPort,
+						Value:       rootConfig.MetricsPort,
+					},
 					&cli.StringFlag{
 						Name:        "clickhouse.address",
 						Usage:       "ClickHouse address containing the host and port, 127.0.0.1:9000",
@@ -216,6 +237,19 @@ func main() {
 func runQueenCommand(c *cli.Context) error {
 	ctx := c.Context
 
+	meterProvider, err := metrics.NewMeterProvider()
+	if err != nil {
+		return fmt.Errorf("init meter provider: %w", err)
+	}
+
+	telemetry, err := metrics.NewTelemetry(noop.NewTracerProvider(), meterProvider)
+	if err != nil {
+		return fmt.Errorf("init telemetry: %w", err)
+	}
+
+	logger.Debugln("Starting metrics server", "host", rootConfig.MetricsHost, "port", rootConfig.MetricsPort)
+	go metrics.ListenAndServe(rootConfig.MetricsHost, rootConfig.MetricsPort)
+
 	// initializing a new clickhouse client
 	client, err := db.NewClient(
 		rootConfig.ClickhouseAddress,
@@ -223,6 +257,7 @@ func runQueenCommand(c *cli.Context) error {
 		rootConfig.ClickhouseUsername,
 		rootConfig.ClickhousePassword,
 		rootConfig.ClickhouseSSL,
+		telemetry,
 	)
 	if err != nil {
 		return fmt.Errorf("init database client: %w", err)
@@ -247,6 +282,7 @@ func runQueenCommand(c *cli.Context) error {
 		NebulaDBConnString: rootConfig.NebulaDBConnString,
 		BucketSize:         rootConfig.BucketSize,
 		UserAgent:          rootConfig.UserAgent,
+		Telemetry:          telemetry,
 	}
 
 	// initializing queen
