@@ -5,6 +5,12 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"strconv"
+	"time"
+
+	"github.com/probe-lab/ants-watch/metrics"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -21,11 +27,12 @@ type Client interface {
 
 type ClickhouseClient struct {
 	driver.Conn
+	telemetry *metrics.Telemetry
 }
 
 var _ Client = (*ClickhouseClient)(nil)
 
-func NewClient(address, database, username, password string, ssl bool) (*ClickhouseClient, error) {
+func NewClient(address, database, username, password string, ssl bool, telemetry *metrics.Telemetry) (*ClickhouseClient, error) {
 	logger.Infoln("Creating new clickhouse client...")
 
 	conn, err := clickhouse.Open(&clickhouse.Options{
@@ -51,13 +58,20 @@ func NewClient(address, database, username, password string, ssl bool) (*Clickho
 	}
 
 	client := &ClickhouseClient{
-		Conn: conn,
+		Conn:      conn,
+		telemetry: telemetry,
 	}
 
 	return client, nil
 }
 
-func (c *ClickhouseClient) BulkInsertRequests(ctx context.Context, requests []*Request) error {
+func (c *ClickhouseClient) BulkInsertRequests(ctx context.Context, requests []*Request) (err error) {
+	start := time.Now()
+	defer func() {
+		c.telemetry.BulkInsertCounter.Add(ctx, 1, metric.WithAttributes(attribute.String("success", strconv.FormatBool(err == nil))))
+		c.telemetry.BulkInsertSizeHist.Record(ctx, int64(len(requests)))
+		c.telemetry.BulkInsertLatencyMsHist.Record(ctx, time.Since(start).Milliseconds())
+	}()
 	batch, err := c.Conn.PrepareBatch(ctx, "INSERT INTO requests", driver.WithReleaseConnection())
 	if err != nil {
 		return fmt.Errorf("prepare batch: %w", err)
@@ -75,7 +89,6 @@ func (c *ClickhouseClient) BulkInsertRequests(ctx context.Context, requests []*R
 			r.Type,
 			r.KeyID,
 			r.MultiAddresses,
-			r.IsSelfLookup,
 		)
 		if err != nil {
 			return fmt.Errorf("append request to batch: %w", err)

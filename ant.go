@@ -88,6 +88,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.Peerstore(ps),
 		libp2p.DisableRelay(),
 		libp2p.ListenAddrStrings(listenAddrs...),
+		libp2p.DisableMetrics(),
 	}
 
 	if cfg.Port == 0 {

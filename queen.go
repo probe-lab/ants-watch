@@ -3,6 +3,7 @@ package ants
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,13 +12,16 @@ import (
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/ants"
-	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
 	"github.com/probe-lab/ants-watch/db"
+	"github.com/probe-lab/ants-watch/metrics"
 	"github.com/probe-lab/go-libdht/kad"
 	"github.com/probe-lab/go-libdht/kad/key"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
@@ -39,6 +43,7 @@ type QueenConfig struct {
 	NebulaDBConnString string
 	BucketSize         int
 	UserAgent          string
+	Telemetry          *metrics.Telemetry
 }
 
 type Queen struct {
@@ -182,7 +187,15 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 
 			// cache agent version
 			if evt.AgentVersion == "" {
-				evt.AgentVersion, _ = q.agentsCache.Get(evt.Remote.String())
+				var found bool
+				evt.AgentVersion, found = q.agentsCache.Get(evt.Remote.String())
+				q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
+					attribute.String("hit", strconv.FormatBool(found)),
+					attribute.String("cache", "agent_version"),
+				))
+				if found {
+					continue
+				}
 			} else {
 				q.agentsCache.Add(evt.Remote.String(), evt.AgentVersion)
 			}
@@ -190,7 +203,12 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 			// cache protocols
 			var protocols []protocol.ID
 			if len(evt.Protocols) == 0 {
-				protocols, _ = q.protocolsCache.Get(evt.Remote.String())
+				var found bool
+				protocols, found = q.protocolsCache.Get(evt.Remote.String())
+				q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
+					attribute.String("hit", strconv.FormatBool(found)),
+					attribute.String("cache", "protocols"),
+				))
 			} else {
 				protocols = evt.Protocols
 				q.protocolsCache.Add(evt.Remote.String(), evt.Protocols)
@@ -214,12 +232,12 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 				StartedAt:      evt.Timestamp,
 				KeyID:          evt.Target.B58String(),
 				MultiAddresses: maddrStrs,
-				IsSelfLookup:   peer.ID(evt.Target) == evt.Remote && evt.Type == pb.Message_FIND_NODE,
 			}
 
 			requests = append(requests, request)
 
 			if len(requests) >= q.cfg.BatchSize {
+
 				if err = q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
 					logger.Errorf("Error inserting requests: %v", err)
 				}
@@ -334,6 +352,8 @@ func (q *Queen) routine(ctx context.Context) {
 
 		q.ants = append(q.ants, ant)
 	}
+
+	q.cfg.Telemetry.AntsCountGauge.Record(ctx, int64(len(q.ants)))
 
 	logger.Debugf("ants count: %d", len(q.ants))
 	logger.Debug("queen routine over")
