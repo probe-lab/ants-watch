@@ -15,7 +15,7 @@ RUN go mod download
 COPY . ./
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux go build -ldflags "-X main.RawVersion='${RAW_VERSION}'" -o ants github.com/probe-lab/ants-watch/cmd/honeypot
+    CGO_ENABLED=1 GOOS=linux go build -ldflags "-X main.RawVersion='${RAW_VERSION}'" -o ants github.com/probe-lab/ants-watch/cmd/ants
 
 FROM alpine:3.18
 
