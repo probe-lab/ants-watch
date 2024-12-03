@@ -41,6 +41,7 @@ type QueenConfig struct {
 type Queen struct {
 	cfg *QueenConfig
 
+	id       string
 	nebulaDB *NebulaDB
 	keysDB   *KeysDB
 
@@ -82,6 +83,7 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 
 	queen := &Queen{
 		cfg:              cfg,
+		id:               uuid.NewString(),
 		nebulaDB:         NewNebulaDB(cfg.NebulaDBConnString, cfg.CrawlInterval),
 		keysDB:           NewKeysDB(cfg.KeysDBPath),
 		peerstore:        ps,
@@ -200,6 +202,7 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 
 			request := &db.Request{
 				UUID:           uuidv7,
+				QueenID:        q.id,
 				AntID:          evt.Self,
 				RemoteID:       evt.Remote,
 				Type:           evt.Type,

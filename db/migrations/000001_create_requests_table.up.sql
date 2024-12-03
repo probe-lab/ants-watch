@@ -1,6 +1,7 @@
 CREATE TABLE requests
 (
     id               UUID,
+    queen_id         UUID,
     ant_multihash    String,
     remote_multihash String,
     agent_version    String,
