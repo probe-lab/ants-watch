@@ -75,6 +75,7 @@ func (c *ClickhouseClient) BulkInsertRequests(ctx context.Context, requests []*R
 			r.Type,
 			r.KeyID,
 			r.MultiAddresses,
+			r.IsSelfLookup,
 		)
 		if err != nil {
 			return fmt.Errorf("append request to batch: %w", err)

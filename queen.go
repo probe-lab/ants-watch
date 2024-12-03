@@ -11,6 +11,7 @@ import (
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-kad-dht/ants"
+	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
@@ -36,6 +37,8 @@ type QueenConfig struct {
 	CrawlInterval      time.Duration
 	CacheSize          int
 	NebulaDBConnString string
+	BucketSize         int
+	UserAgent          string
 }
 
 type Queen struct {
@@ -122,8 +125,8 @@ func (q *Queen) freePort(port int) {
 }
 
 func (q *Queen) Run(ctx context.Context) error {
-	logger.Debugln("Queen.Run started")
-	defer logger.Debugln("Queen.Run completing")
+	logger.Infoln("Queen.Run started")
+	defer logger.Infoln("Queen.Run completing")
 
 	if err := q.nebulaDB.Open(ctx); err != nil {
 		return fmt.Errorf("opening nebula db: %w", err)
@@ -211,6 +214,7 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 				StartedAt:      evt.Timestamp,
 				KeyID:          evt.Target.B58String(),
 				MultiAddresses: maddrStrs,
+				IsSelfLookup:   peer.ID(evt.Target) == evt.Remote && evt.Type == pb.Message_FIND_NODE,
 			}
 
 			requests = append(requests, request)
@@ -239,7 +243,7 @@ func (q *Queen) persistLiveAntsKeys() {
 	logger.Debugln("Persisting live ants keys")
 	antsKeys := make([]crypto.PrivKey, 0, len(q.ants))
 	for _, ant := range q.ants {
-		antsKeys = append(antsKeys, ant.Host.Peerstore().PrivKey(ant.Host.ID()))
+		antsKeys = append(antsKeys, ant.cfg.PrivateKey)
 	}
 	q.keysDB.MatchingKeys(nil, antsKeys)
 	logger.Debugf("Number of antsKeys persisted: %d", len(antsKeys))
@@ -254,11 +258,11 @@ func (q *Queen) routine(ctx context.Context) {
 
 	networkTrie := trie.New[bit256.Key, peer.ID]()
 	for _, peerId := range networkPeers {
-		networkTrie.Add(PeeridToKadid(peerId), peerId)
+		networkTrie.Add(PeerIDToKadID(peerId), peerId)
 	}
 
 	// zones correspond to the prefixes of the tries that must be covered by an ant
-	zones := trieZones(networkTrie, bucketSize)
+	zones := trieZones(networkTrie, q.cfg.BucketSize)
 	logger.Debugf("%d zones must be covered by ants", len(zones))
 
 	// convert string zone to bitstr.Key
@@ -272,7 +276,7 @@ func (q *Queen) routine(ctx context.Context) {
 	for index, ant := range q.ants {
 		matchedKey := false
 		for i, missingKey := range missingKeys {
-			if key.CommonPrefixLength(ant.KadId, missingKey) == missingKey.BitLen() {
+			if key.CommonPrefixLength(ant.kadID, missingKey) == missingKey.BitLen() {
 				// remove key from missingKeys since covered by current ant
 				missingKeys = append(missingKeys[:i], missingKeys[i+1:]...)
 				matchedKey = true
@@ -293,9 +297,13 @@ func (q *Queen) routine(ctx context.Context) {
 	returnedKeys := make([]crypto.PrivKey, len(excessAntsIndices))
 	for i, index := range excessAntsIndices {
 		ant := q.ants[index]
-		returnedKeys[i] = ant.privKey
-		port := ant.port
-		ant.Close()
+		returnedKeys[i] = ant.cfg.PrivateKey
+		port := ant.cfg.Port
+
+		if err := ant.Close(); err != nil {
+			logger.Warn("error closing ant", err)
+		}
+
 		q.ants = append(q.ants[:index], q.ants[index+1:]...)
 		q.freePort(port)
 	}
@@ -305,7 +313,7 @@ func (q *Queen) routine(ctx context.Context) {
 	for _, key := range privKeys {
 		port, err := q.takeAvailablePort()
 		if err != nil {
-			logger.Error("trying to spawn new ant: ")
+			logger.Error("trying to spawn new ant: ", err)
 			continue
 		}
 
