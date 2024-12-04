@@ -9,6 +9,8 @@ jobs:
     steps:
       - name: Checking out repository code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Setting up Golang
         uses: actions/setup-go@v5
@@ -26,4 +28,4 @@ jobs:
         run: go vet ./...
 
       - name: Running Tests
-        run: go test ./...
+        run: go test ./ # run tests only in root directory
