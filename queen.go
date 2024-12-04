@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hashicorp/golang-lru/v2"
+	lru "github.com/hashicorp/golang-lru/v2"
 	ds "github.com/ipfs/go-datastore"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-log/v2"
@@ -193,9 +193,6 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 					attribute.String("hit", strconv.FormatBool(found)),
 					attribute.String("cache", "agent_version"),
 				))
-				if found {
-					continue
-				}
 			} else {
 				q.agentsCache.Add(evt.Remote.String(), evt.AgentVersion)
 			}
