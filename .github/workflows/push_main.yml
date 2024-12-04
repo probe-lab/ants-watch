@@ -1,4 +1,4 @@
-name: Deployment (prod)
+name: Push (prod)
 
 on:
   workflow_dispatch:
@@ -8,14 +8,14 @@ on:
 
 jobs:
   test:
-    name: Ants
+    name: Deployment
     uses: ./.github/workflows/test.yml
     permissions:
       id-token: write
       contents: read
 
   build_push:
-    name: Ants
+    name: Deployment
     uses: ./.github/workflows/build_push.yml
     needs: test
     permissions:
@@ -23,7 +23,7 @@ jobs:
       contents: read
 
   deploy:
-    name: Ants
+    name: Deployment
     uses: ./.github/workflows/deploy.yml
     needs: build_push
     permissions:
