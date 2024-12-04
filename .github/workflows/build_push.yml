@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checking out the Repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Configuring AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
