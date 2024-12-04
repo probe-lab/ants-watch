@@ -3,9 +3,9 @@ name: Test, Build & Push (dev)
 on:
   workflow_call:
     outputs:
-      image_tag:
+      imageTag:
         description: "The image tag that was pushed to ECR"
-        value: ${{ jobs.push_to_ecr.outputs.image_tag }}
+        value: ${{ jobs.push_to_ecr.outputs.imageTag }}
 
 # TODO: move to workflow inputs:
 env:
@@ -18,7 +18,7 @@ jobs:
     name: Build & Push
     runs-on: ubuntu-latest
     outputs:
-      image_tag: ${{ steps.meta.outputs.image }}
+      imageTag: ${{ steps.meta.outputs.image }}
     steps:
       - name: Checking out the Repository
         uses: actions/checkout@v4

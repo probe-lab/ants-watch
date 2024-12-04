@@ -2,6 +2,10 @@ name: Deployment (prod)
 
 on:
   workflow_call:
+    inputs:
+      imageTag:
+        required: true
+        type: string
     secrets:
       slack_webhook_url:
         required: true
@@ -65,7 +69,7 @@ jobs:
         with:
           task-definition: task-definition-cleaned.json
           container-name: prod-use1-cmi-ants-celestia-watch
-          image: ${{ needs.build_push.outputs.image_tag }}
+          image: ${{ inputs.imageTag }}
 
       - name: Deploying to Amazon ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
