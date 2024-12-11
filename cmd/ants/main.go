@@ -32,6 +32,7 @@ var queenConfig = struct {
 	NumPorts           int
 	FirstPort          int
 	UPnp               bool
+	WssEnabled         bool
 	BatchSize          int
 	BatchTime          time.Duration
 	CrawlInterval      time.Duration
@@ -53,6 +54,7 @@ var queenConfig = struct {
 	NumPorts:           128,
 	FirstPort:          6000,
 	UPnp:               false,
+	WssEnabled:         false,
 	BatchSize:          1000,
 	BatchTime:          20 * time.Second,
 	CrawlInterval:      120 * time.Minute,
@@ -187,6 +189,13 @@ func main() {
 						Destination: &queenConfig.UPnp,
 						Value:       queenConfig.UPnp,
 					},
+					&cli.BoolFlag{
+						Name:        "wss",
+						Usage:       "Enable Secure WebSocket",
+						EnvVars:     []string{"ANTS_WSS"},
+						Destination: &queenConfig.WssEnabled,
+						Value:       queenConfig.WssEnabled,
+					},
 					&cli.IntFlag{
 						Name:        "bucket.size",
 						Usage:       "The bucket size for the ants DHT",
@@ -291,6 +300,7 @@ func runQueenCommand(c *cli.Context) error {
 		NPorts:             queenConfig.NumPorts,
 		FirstPort:          queenConfig.FirstPort,
 		UPnP:               queenConfig.UPnp,
+		WssEnabled:         queenConfig.WssEnabled,
 		BatchSize:          queenConfig.BatchSize,
 		BatchTime:          queenConfig.BatchTime,
 		CrawlInterval:      queenConfig.CrawlInterval,

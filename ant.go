@@ -3,6 +3,7 @@ package ants
 import (
 	"context"
 	"fmt"
+	"time"
 
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
@@ -13,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	libp2pws "github.com/libp2p/go-libp2p/p2p/transport/websocket"
 
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 )
@@ -26,6 +28,8 @@ type AntConfig struct {
 	PrivateKey     crypto.PrivKey
 	UserAgent      string
 	Port           int
+	WssEnabled     bool
+	WssPort        int
 	ProtocolPrefix string
 	BootstrapPeers []peer.AddrInfo
 	EventsChan     chan ants.RequestEvent
@@ -90,6 +94,22 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
 	}
+	var certManager *CertManager
+	if cfg.WssEnabled {
+		var err error
+		certManager, err = NewCertManager(cfg.WssPort)
+		if err != nil {
+			logger.Warn("wss cert manager failed to start: %s", err)
+		} else {
+			opts = append(opts,
+				libp2p.ListenAddrStrings(
+					certManager.CertMgr.AddrStrings()..., // TODO reuse tcp port for ws
+				),
+				libp2p.Transport(libp2pws.New, libp2pws.WithTLSConfig(certManager.CertMgr.TLSConfig())),
+				libp2p.AddrsFactory(certManager.CertMgr.AddressFactory()),
+			)
+		}
+	}
 
 	if cfg.Port == 0 {
 		opts = append(opts, libp2p.NATPortMap()) // enable NAT port mapping if no port is specified
@@ -98,6 +118,20 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	h, err := libp2p.New(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new libp2p host: %w", err)
+	}
+
+	if certManager != nil {
+		certManager.CertMgr.ProvideHost(h)
+		go func(certManager *CertManager) {
+			defer certManager.Stop()
+
+			select {
+			case <-certManager.CertLoaded:
+				logger.Info("certificate loaded: %s", h.ID())
+			case <-time.After(time.Second * 30):
+				logger.Warn("timeout waiting for certificate: %s", h.ID())
+			}
+		}(certManager)
 	}
 
 	dhtOpts := []kad.Option{

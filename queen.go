@@ -36,6 +36,7 @@ type QueenConfig struct {
 	NPorts             int
 	FirstPort          int
 	UPnP               bool
+	WssEnabled         bool
 	BatchSize          int
 	BatchTime          time.Duration
 	CrawlInterval      time.Duration
@@ -314,6 +315,7 @@ func (q *Queen) routine(ctx context.Context) {
 		ant := q.ants[index]
 		returnedKeys[i] = ant.cfg.PrivateKey
 		port := ant.cfg.Port
+		wssPort := ant.cfg.WssPort
 
 		if err := ant.Close(); err != nil {
 			logger.Warn("error closing ant", err)
@@ -321,6 +323,9 @@ func (q *Queen) routine(ctx context.Context) {
 
 		q.ants = append(q.ants[:index], q.ants[index+1:]...)
 		q.freePort(port)
+		if q.cfg.WssEnabled {
+			q.freePort(wssPort)
+		}
 	}
 
 	// add missing ants
@@ -331,11 +336,21 @@ func (q *Queen) routine(ctx context.Context) {
 			logger.Error("trying to spawn new ant: ", err)
 			continue
 		}
+		var wssPort int
+		if q.cfg.WssEnabled {
+			wssPort, err = q.takeAvailablePort()
+			if err != nil {
+				logger.Error("trying to spawn new ant: ", err)
+				continue
+			}
+		}
 
 		antCfg := &AntConfig{
 			PrivateKey:     key,
 			UserAgent:      q.cfg.UserAgent,
 			Port:           port,
+			WssEnabled:     q.cfg.WssEnabled,
+			WssPort:        wssPort,
 			ProtocolPrefix: fmt.Sprintf("/celestia/%s", celestiaNet), // TODO: parameterize
 			BootstrapPeers: BootstrapPeers(celestiaNet),              // TODO: parameterize
 			EventsChan:     q.antsEvents,
