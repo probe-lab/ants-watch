@@ -1,4 +1,4 @@
-name: Test, Build & Push (dev)
+name: Build & Push (dev)
 
 on:
   workflow_call:

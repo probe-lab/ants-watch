@@ -28,3 +28,5 @@ keys.db
 log.txt
 *.dat
 *.mmdb
+
+db/migrations/local
