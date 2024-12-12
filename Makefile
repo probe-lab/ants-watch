@@ -11,7 +11,7 @@ REPO_REGION?=us-east-1
 
 
 tools:
-	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.15.2
+	go install -tags 'postgres,clickhouse' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.15.2
 
 non-cluster-migrations:
 	mkdir -p db/migrations/local
