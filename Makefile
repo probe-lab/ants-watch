@@ -13,14 +13,21 @@ REPO_REGION?=us-east-1
 tools:
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.15.2
 
-migrate-up:
-	migrate -database 'clickhouse://localhost:9000?username=default&secure=false' -path db/migrations up
+non-cluster-migrations:
+	mkdir -p db/migrations/local
+	for file in $(shell find db/migrations -maxdepth 1 -name "*.sql"); do \
+	  filename=$$(basename $$file); \
+	  sed 's/Replicated//' $$file > db/migrations/local/$$filename; \
+	done
 
-migrate-down:
-	migrate -database 'clickhouse://localhost:9000?username=default&secure=false' -path db/migrations down
+local-migrate-up: non-cluster-migrations
+	migrate -database 'clickhouse://localhost:9000?username=ants_local&database=ants_local&password=password&x-multi-statement=true' -path db/migrations/local up
+
+local-migrate-down: non-cluster-migrations
+	migrate -database 'clickhouse://localhost:9000?username=ants_local&database=ants_local&password=password&x-multi-statement=true' -path db/migrations/local down
 
 local-clickhouse:
-	docker run --name ants-clickhouse --rm -p 9000:9000 clickhouse/clickhouse-server
+	docker run --name ants-clickhouse --rm -p 9000:9000 -e CLICKHOUSE_DB=ants_local -e CLICKHOUSE_USER=ants_local -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -e CLICKHOUSE_PASSWORD=password clickhouse/clickhouse-server
 
 .PHONY: build
 build:

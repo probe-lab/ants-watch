@@ -38,45 +38,38 @@ git submodule init
 git submodule update --init --recursive --remote
 ```
 
-Then, `go mod tidy`.
-
 You'll also need to install some tools: `make tools`.
 
-You need to setup a postgres database with:
+You need to setup a Clickhouse database with:
 
-* username: `ants-watch`
-* password: `password` <-- you should change this in the [Makefile](./Makefile)
-* database: `ants-watch`
+```shell
+make local-clickhouse
+```
 
-Migrations can now be applied: `make migrate-up`.
+This will start a Clickhouse server with the container name `ants-clickhouse` that's accessible on the non-SSL native port `9000`. Further database parameters are:
+
+* username: `ants_local`
+* password: `password`
+* database: `ants_local`
+
+Then you need to apply the migrations with:
+
+```shell
+make local-migrate-up
+```
 
 ## Configuration
 
-The following environment variables should be set:
+The following environment variables should be set for ants-watch:
 
 ```sh
-DB_HOST=localhost
-DB_PORT=5432
-DB_DATABASE=ants-watch
-DB_USER=ants-watch
-DB_PASSWORD=password
-DB_SSLMODE=disable
+ANTS_CLICKHOUSE_ADDRESS=localhost:9000
+ANTS_CLICKHOUSE_DATABASE=ants_local
+ANTS_CLICKHOUSE_USERNAME=ants_local
+ANTS_CLICKHOUSE_PASSWORD=password
+ANTS_CLICKHOUSE_SSL=false
 
-NEBULA_POSTGRES_CONNURL=postgres://nebula:password@localhost/nebula?sslmode=disable
-
-UDGER_FILEPATH=/location/to/udgerdb.dat               # optional, used to detect datacenters
-MAXMIND_ASN_DB=/location/to/GeoLite2-ASN.mmdb         # optional, used to extract ASN from IP
-MAXMIND_COUNRTY_DB=/location/to/GeoLite2-Country.mmdb # optional, used to extract country from IP
-
-KEY_DB_PATH=/location/to/keys.db  # optional, used to store the generated libp2p keys
-
-METRICS_HOST=0.0.0.0  # optional, used to expose metrics
-METRICS_PORT=6666     # optional, used to expose metrics
-
-TRACES_HOST=0.0.0.0   # optional, used to expose traces
-TRACES_PORT=6667      # optional, used to expose traces
-
-BATCH_TIME=20 # optional, time in seconds between each batch of requests
+ANTS_NEBULA_CONNSTRING=postgres://nebula:password@localhost/nebula?sslmode=disable # change with proper values for the datbase you want to use
 ```
 
 ## Usage
@@ -90,9 +83,9 @@ Once the database is setup and migrations are applied, you can start the honeypo
 In [`cmd/honeypot/`](./cmd/honeypot/), you can run the following command:
 
 ```sh
-go run . queen -upnp=true # for UPnP
+go run ./cmd/ants queen --upnp # for UPnP
 # or
-go run . queen -firstPort=<port> -nPorts=<count> # for port forwarding
+go run ./cmd/ants queen --first_port=<port> --num_ports=<count> # for port forwarding
 ```
 
 When UPnP is disabled, ports from `firstPort` to `firstPort + nPorts - 1` must be forwarded to the machine running `ants-watch`. `ants-watch` will be able to spawn at most `nPorts` distinct `ants`.
