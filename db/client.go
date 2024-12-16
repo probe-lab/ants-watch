@@ -78,18 +78,7 @@ func (c *ClickhouseClient) BulkInsertRequests(ctx context.Context, requests []*R
 	}
 
 	for _, r := range requests {
-		err = batch.Append(
-			r.UUID.String(),
-			r.QueenID,
-			r.AntID.String(),
-			r.RemoteID.String(),
-			r.AgentVersion,
-			r.Protocols,
-			r.StartedAt,
-			r.Type,
-			r.KeyID,
-			r.MultiAddresses,
-		)
+		err = batch.AppendStruct(r)
 		if err != nil {
 			return fmt.Errorf("append request to batch: %w", err)
 		}
