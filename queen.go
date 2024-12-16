@@ -3,6 +3,7 @@ package ants
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -55,7 +56,7 @@ type Queen struct {
 
 	peerstore      peerstore.Peerstore
 	datastore      ds.Batching
-	agentsCache    *lru.Cache[string, string]
+	agentsCache    *lru.Cache[string, agentVersionInfo]
 	protocolsCache *lru.Cache[string, []protocol.ID]
 
 	ants       []*Ant
@@ -79,7 +80,7 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 		return nil, fmt.Errorf("creating in-memory leveldb: %w", err)
 	}
 
-	agentsCache, err := lru.New[string, string](cfg.CacheSize)
+	agentsCache, err := lru.New[string, agentVersionInfo](cfg.CacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("init agents cache: %w", err)
 	}
@@ -185,16 +186,18 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 				maddrStrs[i] = maddr.String()
 			}
 
+			avi := parseAgentVersion(evt.AgentVersion)
+
 			// cache agent version
-			if evt.AgentVersion == "" {
+			if avi.full == "" {
 				var found bool
-				evt.AgentVersion, found = q.agentsCache.Get(evt.Remote.String())
+				avi, found = q.agentsCache.Get(evt.Remote.String())
 				q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
 					attribute.String("hit", strconv.FormatBool(found)),
 					attribute.String("cache", "agent_version"),
 				))
 			} else {
-				q.agentsCache.Add(evt.Remote.String(), evt.AgentVersion)
+				q.agentsCache.Add(evt.Remote.String(), avi)
 			}
 
 			// cache protocols
@@ -211,6 +214,7 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 				q.protocolsCache.Add(evt.Remote.String(), evt.Protocols)
 			}
 			protocolStrs := protocol.ConvertToStrings(protocols)
+			sort.Strings(protocolStrs)
 
 			uuidv7, err := uuid.NewV7()
 			if err != nil {
@@ -219,22 +223,23 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 			}
 
 			request := &db.Request{
-				UUID:           uuidv7,
-				QueenID:        q.id,
-				AntID:          evt.Self,
-				RemoteID:       evt.Remote,
-				RequestType:    evt.Type,
-				AgentVersion:   evt.AgentVersion,
-				Protocols:      protocolStrs,
-				StartedAt:      evt.Timestamp,
-				KeyID:          evt.Target.B58String(),
-				MultiAddresses: maddrStrs,
+				UUID:               uuidv7,
+				QueenID:            q.id,
+				AntID:              evt.Self,
+				RemoteID:           evt.Remote,
+				RequestType:        evt.Type,
+				AgentVersion:       evt.AgentVersion,
+				AgentVersionType:   avi.typ,
+				AgentVersionSemVer: avi.Semver(),
+				Protocols:          protocolStrs,
+				StartedAt:          evt.Timestamp,
+				KeyID:              evt.Target.B58String(),
+				MultiAddresses:     maddrStrs,
 			}
 
 			requests = append(requests, request)
 
 			if len(requests) >= q.cfg.BatchSize {
-
 				if err = q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
 					logger.Errorf("Error inserting requests: %v", err)
 				}
