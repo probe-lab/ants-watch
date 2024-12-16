@@ -1,0 +1,1 @@
+ALTER TABLE requests MODIFY TTL toDateTime(started_at) + INTERVAL 180 DAY;
