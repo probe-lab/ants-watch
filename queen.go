@@ -223,7 +223,7 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 				QueenID:        q.id,
 				AntID:          evt.Self,
 				RemoteID:       evt.Remote,
-				Type:           evt.Type,
+				RequestType:    evt.Type,
 				AgentVersion:   evt.AgentVersion,
 				Protocols:      protocolStrs,
 				StartedAt:      evt.Timestamp,
