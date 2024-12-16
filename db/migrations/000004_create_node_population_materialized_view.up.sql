@@ -5,4 +5,4 @@ SELECT
     agent_version_type,
     agent_version_semver
 FROM requests
-GROUP BY timestamp, agent_version_type, agent_version_semver
+GROUP BY timestamp, agent_version_type, agent_version_semver;

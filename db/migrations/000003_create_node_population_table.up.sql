@@ -4,4 +4,4 @@ CREATE TABLE node_population (
     agent_version_type   LowCardinality(String),
     agent_version_semver Array(Int16)
 ) ENGINE = AggregatingMergeTree()
-    PRIMARY KEY (timestamp, agent_version_type)
+    PRIMARY KEY (timestamp, agent_version_type, agent_version_semver)
