@@ -3,8 +3,10 @@ package ants
 import (
 	"context"
 	"fmt"
+	"time"
 
 	ds "github.com/ipfs/go-datastore"
+	p2pforge "github.com/ipshipyard/p2p-forge/client"
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/ants"
@@ -13,6 +15,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
+	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
+	libp2pws "github.com/libp2p/go-libp2p/p2p/transport/websocket"
+	webtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
 
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 )
@@ -26,6 +32,8 @@ type AntConfig struct {
 	PrivateKey     crypto.PrivKey
 	UserAgent      string
 	Port           int
+	WssEnabled     bool
+	WssPort        int
 	ProtocolPrefix string
 	BootstrapPeers []peer.AddrInfo
 	EventsChan     chan ants.RequestEvent
@@ -56,10 +64,11 @@ func (cfg *AntConfig) Validate() error {
 }
 
 type Ant struct {
-	cfg   *AntConfig
-	host  host.Host
-	dht   *kad.IpfsDHT
-	kadID bit256.Key
+	cfg         *AntConfig
+	host        host.Host
+	dht         *kad.IpfsDHT
+	kadID       bit256.Key
+	certManager *p2pforge.P2PForgeCertMgr
 }
 
 func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *AntConfig) (*Ant, error) {
@@ -87,9 +96,34 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.Identity(cfg.PrivateKey),
 		libp2p.Peerstore(ps),
 		libp2p.DisableRelay(),
-		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
+		libp2p.Transport(tcp.NewTCPTransport),
+		libp2p.Transport(quic.NewTransport),
+		libp2p.Transport(webtransport.New),
 	}
+	var certManager *p2pforge.P2PForgeCertMgr
+	certLoaded := make(chan bool, 1)
+	if cfg.WssEnabled {
+		var err error
+		certManager, err = p2pforge.NewP2PForgeCertMgr(
+			p2pforge.WithOnCertLoaded(func() {
+				certLoaded <- true
+			}))
+		if err != nil {
+			logger.Warnf("wss cert manager error: %s", err)
+		} else {
+			listenAddrs = append(listenAddrs,
+				fmt.Sprintf("/ip4/0.0.0.0/tcp/%d/tls/sni/*.%s/ws", cfg.WssPort, p2pforge.DefaultForgeDomain),
+				fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.WssPort, p2pforge.DefaultForgeDomain),
+			)
+			opts = append(opts,
+				libp2p.Transport(libp2pws.New, libp2pws.WithTLSConfig(certManager.TLSConfig())),
+				libp2p.AddrsFactory(certManager.AddressFactory()),
+			)
+		}
+	}
+
+	opts = append(opts, libp2p.ListenAddrStrings(listenAddrs...))
 
 	if cfg.Port == 0 {
 		opts = append(opts, libp2p.NATPortMap()) // enable NAT port mapping if no port is specified
@@ -98,6 +132,23 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	h, err := libp2p.New(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new libp2p host: %w", err)
+	}
+
+	if certManager != nil {
+		certManager.ProvideHost(h)
+		if err := certManager.Start(); err != nil {
+			logger.Warnf("wss cert manager start error: %s", err)
+		}
+		go func(certManager *p2pforge.P2PForgeCertMgr, certLoaded chan bool) {
+			defer certManager.Stop()
+
+			select {
+			case <-certLoaded:
+				logger.Info("certificate loaded: %s", h.ID())
+			case <-time.After(time.Second * 70):
+				logger.Warnf("timeout waiting for certificate: %s", h.ID())
+			}
+		}(certManager, certLoaded)
 	}
 
 	dhtOpts := []kad.Option{
