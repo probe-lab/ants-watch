@@ -228,7 +228,7 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 				AntID:              evt.Self,
 				RemoteID:           evt.Remote,
 				RequestType:        evt.Type,
-				AgentVersion:       evt.AgentVersion,
+				AgentVersion:       avi.full,
 				AgentVersionType:   avi.typ,
 				AgentVersionSemVer: avi.Semver(),
 				Protocols:          protocolStrs,
