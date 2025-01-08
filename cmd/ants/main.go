@@ -266,17 +266,24 @@ func runQueenCommand(c *cli.Context) error {
 	logger.Debugln("Starting metrics server", "host", queenConfig.MetricsHost, "port", queenConfig.MetricsPort)
 	go metrics.ListenAndServe(queenConfig.MetricsHost, queenConfig.MetricsPort)
 
-	// initializing a new clickhouse client
-	client, err := db.NewClient(
-		queenConfig.ClickhouseAddress,
-		queenConfig.ClickhouseDatabase,
-		queenConfig.ClickhouseUsername,
-		queenConfig.ClickhousePassword,
-		queenConfig.ClickhouseSSL,
-		telemetry,
-	)
-	if err != nil {
-		return fmt.Errorf("init database client: %w", err)
+	var client db.Client
+	if queenConfig.ClickhouseAddress == "" {
+		logger.Warn("No clickhouse address provided, using no-op client.")
+		client = db.NewNoopClient()
+	} else {
+		// initializing a new clickhouse client
+		client, err = db.NewClickhouseClient(
+			queenConfig.ClickhouseAddress,
+			queenConfig.ClickhouseDatabase,
+			queenConfig.ClickhouseUsername,
+			queenConfig.ClickhousePassword,
+			queenConfig.ClickhouseSSL,
+			telemetry,
+		)
+		if err != nil {
+			return fmt.Errorf("init database client: %w", err)
+		}
+
 	}
 
 	// pinging database to check availability
