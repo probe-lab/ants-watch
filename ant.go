@@ -16,11 +16,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
-	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
+	libp2ptcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	libp2pwebrtc "github.com/libp2p/go-libp2p/p2p/transport/webrtc"
 	libp2pws "github.com/libp2p/go-libp2p/p2p/transport/websocket"
 	libp2pwebtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
-
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 )
 
@@ -113,7 +112,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
 		libp2p.ShareTCPListener(),
-		libp2p.Transport(tcp.NewTCPTransport),
+		libp2p.Transport(libp2ptcp.NewTCPTransport),
 		libp2p.Transport(libp2pquic.NewTransport),
 		libp2p.Transport(libp2pwebtransport.New),
 		libp2p.Transport(libp2pwebrtc.New),
@@ -147,6 +146,8 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	if err = dht.Bootstrap(ctx); err != nil {
 		logger.Warn("bootstrap failed: %s", err)
 	}
+
+	certMgr.ProvideHost(h)
 
 	if err = certMgr.Start(); err != nil {
 		return nil, fmt.Errorf("start cert manager: %w", err)
