@@ -3,7 +3,6 @@ package ants
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	ds "github.com/ipfs/go-datastore"
 	p2pforge "github.com/ipshipyard/p2p-forge/client"
@@ -155,31 +154,36 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 
 	go func() {
 		for range certLoadedChan {
-			logger.Info("Loaded certificate", "ant", h.ID())
+			logger.Infow("Loaded certificate", "ant", h.ID())
 		}
 		logger.Debug("certificate loaded channel closed")
 	}()
 
-	sub, err := h.EventBus().Subscribe(new(event.EvtLocalAddressesUpdated))
+	sub, err := h.EventBus().Subscribe([]interface{}{new(event.EvtLocalAddressesUpdated), new(event.EvtLocalReachabilityChanged)})
 	if err != nil {
 		return nil, fmt.Errorf("subscribe to event bus: %w", err)
 	}
 
 	go func() {
 		for out := range sub.Out() {
-			evt := out.(event.EvtLocalAddressesUpdated) // guaranteed
-			for _, maddr := range evt.Current {
-				if !strings.Contains(maddr.Address.String(), forgeDomain) {
-					continue
+			switch evt := out.(type) {
+			case event.EvtLocalAddressesUpdated:
+				logger.Infow("Addrs updated", "ant", h.ID())
+				for i, maddr := range evt.Current {
+					actionStr := ""
+					switch maddr.Action {
+					case event.Added:
+						actionStr = "ADD"
+					case event.Removed:
+						actionStr = "REMOVE"
+					default:
+						continue
+					}
+					logger.Infof("  [%d] %s %s", i, actionStr, maddr.Address)
 				}
-
-				if maddr.Action == event.Added {
-					logger.Info("Ant added libp2p.direct multiaddress", "maddr", maddr.Address.String(), "ant", h.ID())
-				} else if maddr.Action == event.Removed {
-					logger.Info("Ant removed libp2p.direct multiaddress", "maddr", maddr.Address.String(), "ant", h.ID())
-				}
+			case event.EvtLocalReachabilityChanged:
+				logger.Infow("Reachability changed", "ant", h.ID(), "reachability", evt.Reachability)
 			}
-
 		}
 	}()
 
