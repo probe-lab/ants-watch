@@ -112,7 +112,6 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.DisableRelay(),
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
-		libp2p.ShareTCPListener(),
 		libp2p.Transport(libp2ptcp.NewTCPTransport),
 		libp2p.Transport(libp2pquic.NewTransport),
 		libp2p.Transport(libp2pwebtransport.New),
