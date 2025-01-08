@@ -293,6 +293,7 @@ func (q *Queen) routine(ctx context.Context) {
 
 	// zones correspond to the prefixes of the tries that must be covered by an ant
 	zones := trieZones(networkTrie, q.cfg.BucketSize)
+	zones = zones[0:1] // TODO: Remove temporary
 	logger.Debugf("%d zones must be covered by ants", len(zones))
 
 	// convert string zone to bitstr.Key
