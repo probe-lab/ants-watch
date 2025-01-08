@@ -36,7 +36,6 @@ type QueenConfig struct {
 	KeysDBPath         string
 	NPorts             int
 	FirstPort          int
-	FirstPortWSS       int
 	UPnP               bool
 	BatchSize          int
 	BatchTime          time.Duration
@@ -46,10 +45,6 @@ type QueenConfig struct {
 	BucketSize         int
 	UserAgent          string
 	Telemetry          *metrics.Telemetry
-}
-
-func (cfg *QueenConfig) RangesOverlap() bool {
-	return cfg.FirstPort+cfg.NPorts > cfg.FirstPortWSS && cfg.FirstPort < cfg.FirstPortWSS+cfg.NPorts
 }
 
 type Queen struct {
@@ -76,10 +71,6 @@ type Queen struct {
 }
 
 func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
-	if cfg.RangesOverlap() {
-		return nil, fmt.Errorf("port ranges overlap")
-	}
-
 	ps, err := pstoremem.NewPeerstore()
 	if err != nil {
 		return nil, fmt.Errorf("creating peerstore: %w", err)
@@ -118,9 +109,9 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 	return queen, nil
 }
 
-func (q *Queen) takeAvailablePort() (int, int, error) {
+func (q *Queen) takeAvailablePort() (int, error) {
 	if q.cfg.UPnP {
-		return 0, 0, nil
+		return 0, nil
 	}
 
 	for i, occupied := range q.portsOccupancy {
@@ -128,10 +119,10 @@ func (q *Queen) takeAvailablePort() (int, int, error) {
 			continue
 		}
 		q.portsOccupancy[i] = true
-		return q.cfg.FirstPort + i, q.cfg.FirstPortWSS + i, nil
+		return q.cfg.FirstPort + i, nil
 	}
 
-	return 0, 0, fmt.Errorf("no available port")
+	return 0, fmt.Errorf("no available port")
 }
 
 func (q *Queen) freePort(port int) {
@@ -341,7 +332,7 @@ func (q *Queen) routine(ctx context.Context) {
 	// add missing ants
 	privKeys := q.keysDB.MatchingKeys(missingKeys, returnedKeys)
 	for _, key := range privKeys {
-		port, portWSS, err := q.takeAvailablePort()
+		port, err := q.takeAvailablePort()
 		if err != nil {
 			logger.Error("trying to spawn new ant: ", err)
 			continue
@@ -351,7 +342,6 @@ func (q *Queen) routine(ctx context.Context) {
 			PrivateKey:     key,
 			UserAgent:      q.cfg.UserAgent,
 			Port:           port,
-			PortWSS:        portWSS,
 			ProtocolPrefix: fmt.Sprintf("/celestia/%s", celestiaNet), // TODO: parameterize
 			BootstrapPeers: BootstrapPeers(celestiaNet),              // TODO: parameterize
 			EventsChan:     q.antsEvents,

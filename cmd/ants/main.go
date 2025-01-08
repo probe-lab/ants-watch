@@ -31,7 +31,6 @@ var queenConfig = struct {
 	KeyDBPath          string
 	NumPorts           int
 	FirstPort          int
-	FirstPortWSS       int
 	UPnp               bool
 	BatchSize          int
 	BatchTime          time.Duration
@@ -61,7 +60,6 @@ var queenConfig = struct {
 	BucketSize:         20,
 	UserAgent:          "celestiant",
 	QueenID:            "",
-	FirstPortWSS:       7000,
 }
 
 func main() {
@@ -174,13 +172,6 @@ func main() {
 						EnvVars:     []string{"ANTS_FIRST_PORT"},
 						Destination: &queenConfig.FirstPort,
 						Value:       queenConfig.FirstPort,
-					},
-					&cli.IntFlag{
-						Name:        "first_port_wss",
-						Usage:       "First port ants can listen on for secure websockets",
-						EnvVars:     []string{"ANTS_FIRST_PORT_WSS"},
-						Destination: &queenConfig.FirstPortWSS,
-						Value:       queenConfig.FirstPortWSS,
 					},
 					&cli.IntFlag{
 						Name:        "num_ports",
@@ -306,7 +297,6 @@ func runQueenCommand(c *cli.Context) error {
 		KeysDBPath:         queenConfig.KeyDBPath,
 		NPorts:             queenConfig.NumPorts,
 		FirstPort:          queenConfig.FirstPort,
-		FirstPortWSS:       queenConfig.FirstPortWSS,
 		UPnP:               queenConfig.UPnp,
 		BatchSize:          queenConfig.BatchSize,
 		BatchTime:          queenConfig.BatchTime,

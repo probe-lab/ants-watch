@@ -33,7 +33,6 @@ type AntConfig struct {
 	PrivateKey     crypto.PrivKey
 	UserAgent      string
 	Port           int
-	PortWSS        int
 	ProtocolPrefix string
 	BootstrapPeers []peer.AddrInfo
 	EventsChan     chan ants.RequestEvent
@@ -98,12 +97,12 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", cfg.Port),
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1/webtransport", cfg.Port),
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/webrtc-direct", cfg.Port),
-		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d/tls/sni/*.%s/ws", cfg.PortWSS, forgeDomain), // cert manager websocket multi address
+		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
 		fmt.Sprintf("/ip6/::/tcp/%d", cfg.Port),
 		fmt.Sprintf("/ip6/::/udp/%d/quic-v1", cfg.Port),
 		fmt.Sprintf("/ip6/::/udp/%d/quic-v1/webtransport", cfg.Port),
 		fmt.Sprintf("/ip6/::/udp/%d/webrtc-direct", cfg.Port),
-		fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.PortWSS, forgeDomain), // cert manager websocket multi address
+		fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
 	}
 
 	opts := []libp2p.Option{
