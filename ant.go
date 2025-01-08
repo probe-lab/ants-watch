@@ -3,16 +3,24 @@ package ants
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	ds "github.com/ipfs/go-datastore"
+	p2pforge "github.com/ipshipyard/p2p-forge/client"
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/ants"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
+	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
+	libp2pwebrtc "github.com/libp2p/go-libp2p/p2p/transport/webrtc"
+	libp2pws "github.com/libp2p/go-libp2p/p2p/transport/websocket"
+	libp2pwebtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
 
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 )
@@ -56,10 +64,13 @@ func (cfg *AntConfig) Validate() error {
 }
 
 type Ant struct {
-	cfg   *AntConfig
-	host  host.Host
-	dht   *kad.IpfsDHT
-	kadID bit256.Key
+	cfg            *AntConfig
+	host           host.Host
+	dht            *kad.IpfsDHT
+	certMgr        *p2pforge.P2PForgeCertMgr
+	kadID          bit256.Key
+	certLoadedChan chan struct{}
+	sub            event.Subscription
 }
 
 func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *AntConfig) (*Ant, error) {
@@ -69,17 +80,30 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	portStr := fmt.Sprint(cfg.Port)
+	certLoadedChan := make(chan struct{})
+	forgeDomain := p2pforge.DefaultForgeDomain
+	certMgr, err := p2pforge.NewP2PForgeCertMgr(
+		p2pforge.WithForgeDomain(forgeDomain),
+		p2pforge.WithOnCertLoaded(func() {
+			certLoadedChan <- struct{}{}
+		}),
+		p2pforge.WithLogger(logger.Desugar().Sugar()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("new p2pforge cert manager: %w", err)
+	}
 
-	// taken from github.com/celestiaorg/celestia-node/nodebuilder/p2p/config.go
-	// ports are assigned automatically
 	listenAddrs := []string{
-		"/ip4/0.0.0.0/udp/" + portStr + "/quic-v1/webtransport",
-		"/ip6/::/udp/" + portStr + "/quic-v1/webtransport",
-		"/ip4/0.0.0.0/udp/" + portStr + "/quic-v1",
-		"/ip6/::/udp/" + portStr + "/quic-v1",
-		"/ip4/0.0.0.0/tcp/" + portStr,
-		"/ip6/::/tcp/" + portStr,
+		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", cfg.Port),
+		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", cfg.Port),
+		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1/webtransport", cfg.Port),
+		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/webrtc-direct", cfg.Port),
+		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
+		fmt.Sprintf("/ip6/::/tcp/%d", cfg.Port),
+		fmt.Sprintf("/ip6/::/udp/%d/quic-v1", cfg.Port),
+		fmt.Sprintf("/ip6/::/udp/%d/quic-v1/webtransport", cfg.Port),
+		fmt.Sprintf("/ip6/::/udp/%d/webrtc-direct", cfg.Port),
+		fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
 	}
 
 	opts := []libp2p.Option{
@@ -89,6 +113,13 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.DisableRelay(),
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
+		libp2p.ShareTCPListener(),
+		libp2p.Transport(tcp.NewTCPTransport),
+		libp2p.Transport(libp2pquic.NewTransport),
+		libp2p.Transport(libp2pwebtransport.New),
+		libp2p.Transport(libp2pwebrtc.New),
+		libp2p.Transport(libp2pws.New, libp2pws.WithTLSConfig(certMgr.TLSConfig())),
+		libp2p.AddrsFactory(certMgr.AddressFactory()),
 	}
 
 	if cfg.Port == 0 {
@@ -114,22 +145,67 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 
 	logger.Debugf("spawned ant. kadid: %s, peerid: %s", PeerIDToKadID(h.ID()).HexString(), h.ID())
 
-	ant := &Ant{
-		cfg:   cfg,
-		host:  h,
-		dht:   dht,
-		kadID: PeerIDToKadID(h.ID()),
+	if err = dht.Bootstrap(ctx); err != nil {
+		logger.Warn("bootstrap failed: %s", err)
 	}
 
-	go dht.Bootstrap(ctx)
+	if err = certMgr.Start(); err != nil {
+		return nil, fmt.Errorf("start cert manager: %w", err)
+	}
+
+	go func() {
+		for range certLoadedChan {
+			logger.Info("Loaded certificate", "ant", h.ID())
+		}
+		logger.Debug("certificate loaded channel closed")
+	}()
+
+	sub, err := h.EventBus().Subscribe(new(event.EvtLocalAddressesUpdated))
+	if err != nil {
+		return nil, fmt.Errorf("subscribe to event bus: %w", err)
+	}
+
+	go func() {
+		for out := range sub.Out() {
+			evt := out.(event.EvtLocalAddressesUpdated) // guaranteed
+			for _, maddr := range evt.Current {
+				if !strings.Contains(maddr.Address.String(), forgeDomain) {
+					continue
+				}
+
+				if maddr.Action == event.Added {
+					logger.Info("Ant added libp2p.direct multiaddress", "maddr", maddr.Address.String(), "ant", h.ID())
+				} else if maddr.Action == event.Removed {
+					logger.Info("Ant removed libp2p.direct multiaddress", "maddr", maddr.Address.String(), "ant", h.ID())
+				}
+			}
+
+		}
+	}()
+
+	ant := &Ant{
+		cfg:            cfg,
+		host:           h,
+		dht:            dht,
+		certMgr:        certMgr,
+		certLoadedChan: certLoadedChan,
+		sub:            sub,
+		kadID:          PeerIDToKadID(h.ID()),
+	}
 
 	return ant, nil
 }
 
 func (a *Ant) Close() error {
-	err := a.dht.Close()
-	if err != nil {
-		return err
+	if err := a.sub.Close(); err != nil {
+		logger.Warnf("failed to close address update subscription: %s", err)
+	}
+
+	a.certMgr.Stop()
+	close(a.certLoadedChan)
+
+	if err := a.dht.Close(); err != nil {
+		logger.Warnf("failed to close dht: %s", err)
 	}
 	return a.host.Close()
 }
