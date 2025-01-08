@@ -3,7 +3,9 @@ package ants
 import (
 	"context"
 	"fmt"
+	"os"
 
+	"github.com/caddyserver/certmagic"
 	ds "github.com/ipfs/go-datastore"
 	p2pforge "github.com/ipshipyard/p2p-forge/client"
 	"github.com/libp2p/go-libp2p"
@@ -79,6 +81,11 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
+	tmpDir, err := os.MkdirTemp("", "p2p-forge-certs")
+	if err != nil {
+		return nil, fmt.Errorf("create temporary directory for certificates: %w", err)
+	}
+
 	certLoadedChan := make(chan struct{})
 	forgeDomain := p2pforge.DefaultForgeDomain
 	certMgr, err := p2pforge.NewP2PForgeCertMgr(
@@ -87,6 +94,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 			certLoadedChan <- struct{}{}
 		}),
 		p2pforge.WithLogger(logger.Desugar().Sugar()),
+		p2pforge.WithCertificateStorage(&certmagic.FileStorage{Path: tmpDir}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("new p2pforge cert manager: %w", err)
