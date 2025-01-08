@@ -177,7 +177,11 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		for out := range sub.Out() {
 			switch evt := out.(type) {
 			case event.EvtLocalAddressesUpdated:
-				logger.Infow("Addrs updated", "ant", h.ID())
+				if !evt.Diffs {
+					continue
+				}
+
+				logger.Infow("Ant now listening on:", "ant", h.ID())
 				for i, maddr := range evt.Current {
 					actionStr := ""
 					switch maddr.Action {
@@ -185,6 +189,8 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 						actionStr = "ADD"
 					case event.Removed:
 						actionStr = "REMOVE"
+					case event.Maintained:
+						actionStr = "MAINTAINED"
 					default:
 						continue
 					}
