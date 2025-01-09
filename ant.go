@@ -118,12 +118,12 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", cfg.Port),
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1/webtransport", cfg.Port),
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/webrtc-direct", cfg.Port),
-		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
+		// fmt.Sprintf("/ip4/0.0.0.0/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
 		fmt.Sprintf("/ip6/::/tcp/%d", cfg.Port),
 		fmt.Sprintf("/ip6/::/udp/%d/quic-v1", cfg.Port),
 		fmt.Sprintf("/ip6/::/udp/%d/quic-v1/webtransport", cfg.Port),
 		fmt.Sprintf("/ip6/::/udp/%d/webrtc-direct", cfg.Port),
-		fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
+		// fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
 	}
 
 	opts := []libp2p.Option{
@@ -133,7 +133,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.DisableRelay(),
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
-		libp2p.ShareTCPListener(),
+		// libp2p.ShareTCPListener(),
 		libp2p.ResourceManager(rm),
 		libp2p.ConnectionManager(connmgr.NullConnMgr{}),
 		libp2p.Transport(libp2ptcp.NewTCPTransport),
@@ -141,7 +141,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.Transport(libp2pwebtransport.New),
 		libp2p.Transport(libp2pwebrtc.New),
 		libp2p.Transport(libp2pws.New, libp2pws.WithTLSConfig(certMgr.TLSConfig())),
-		libp2p.AddrsFactory(certMgr.AddressFactory()),
+		// libp2p.AddrsFactory(certMgr.AddressFactory()),
 	}
 
 	if cfg.Port == 0 {
@@ -236,7 +236,7 @@ func (a *Ant) Close() error {
 		logger.Warnf("failed to close address update subscription: %s", err)
 	}
 
-	a.certMgr.Stop()
+	// a.certMgr.Stop()
 	close(a.certLoadedChan)
 
 	if err := a.dht.Close(); err != nil {
