@@ -3,7 +3,6 @@ package ants
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/caddyserver/certmagic"
 	ds "github.com/ipfs/go-datastore"
@@ -39,6 +38,7 @@ type AntConfig struct {
 	ProtocolPrefix string
 	BootstrapPeers []peer.AddrInfo
 	EventsChan     chan ants.RequestEvent
+	CertPath       string
 }
 
 func (cfg *AntConfig) Validate() error {
@@ -82,11 +82,6 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	tmpDir, err := os.MkdirTemp("", "p2p-forge-certs")
-	if err != nil {
-		return nil, fmt.Errorf("create temporary directory for certificates: %w", err)
-	}
-
 	certLoadedChan := make(chan struct{})
 	forgeDomain := p2pforge.DefaultForgeDomain
 	certMgr, err := p2pforge.NewP2PForgeCertMgr(
@@ -95,7 +90,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 			certLoadedChan <- struct{}{}
 		}),
 		p2pforge.WithLogger(logger.Desugar().Sugar()),
-		p2pforge.WithCertificateStorage(&certmagic.FileStorage{Path: tmpDir}),
+		p2pforge.WithCertificateStorage(&certmagic.FileStorage{Path: cfg.CertPath}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("new p2pforge cert manager: %w", err)
@@ -118,12 +113,12 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", cfg.Port),
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1/webtransport", cfg.Port),
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/webrtc-direct", cfg.Port),
-		// fmt.Sprintf("/ip4/0.0.0.0/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
+		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
 		fmt.Sprintf("/ip6/::/tcp/%d", cfg.Port),
 		fmt.Sprintf("/ip6/::/udp/%d/quic-v1", cfg.Port),
 		fmt.Sprintf("/ip6/::/udp/%d/quic-v1/webtransport", cfg.Port),
 		fmt.Sprintf("/ip6/::/udp/%d/webrtc-direct", cfg.Port),
-		// fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
+		fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
 	}
 
 	opts := []libp2p.Option{
@@ -164,18 +159,17 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	if err != nil {
 		return nil, fmt.Errorf("new libp2p dht: %w", err)
 	}
-
 	logger.Debugf("spawned ant. kadid: %s, peerid: %s", PeerIDToKadID(h.ID()).HexString(), h.ID())
 
 	if err = dht.Bootstrap(ctx); err != nil {
 		logger.Warn("bootstrap failed: %s", err)
 	}
 
-	//certMgr.ProvideHost(h)
-	//
-	//if err = certMgr.Start(); err != nil {
-	//	return nil, fmt.Errorf("start cert manager: %w", err)
-	//}
+	certMgr.ProvideHost(h)
+
+	if err = certMgr.Start(); err != nil {
+		return nil, fmt.Errorf("start cert manager: %w", err)
+	}
 
 	go func() {
 		for range certLoadedChan {
@@ -236,7 +230,7 @@ func (a *Ant) Close() error {
 		logger.Warnf("failed to close address update subscription: %s", err)
 	}
 
-	// a.certMgr.Stop()
+	a.certMgr.Stop()
 	close(a.certLoadedChan)
 
 	if err := a.dht.Close(); err != nil {

@@ -2,18 +2,13 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	leveldb "github.com/ipfs/go-ds-leveldb"
 	logging "github.com/ipfs/go-log/v2"
-	ants2 "github.com/libp2p/go-libp2p-kad-dht/ants"
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel/trace/noop"
 
@@ -34,6 +29,7 @@ var queenConfig = struct {
 	ClickhouseSSL      bool
 	NebulaDBConnString string
 	KeyDBPath          string
+	CertsPath          string
 	NumPorts           int
 	FirstPort          int
 	UPnp               bool
@@ -55,6 +51,7 @@ var queenConfig = struct {
 	ClickhouseSSL:      true,
 	NebulaDBConnString: "",
 	KeyDBPath:          "keys.db",
+	CertsPath:          "p2p-forge-certs",
 	NumPorts:           128,
 	FirstPort:          6000,
 	UPnp:               false,
@@ -76,65 +73,6 @@ func main() {
 		Name:  "ants-watch",
 		Usage: "Get DHT clients in your p2p network using a honeypot",
 		Commands: []*cli.Command{
-			{
-				Name:  "ant",
-				Usage: "Starts a test ant",
-				Action: func(c *cli.Context) error {
-					err := logging.SetLogLevel("tcp-demultiplex", "debug")
-					if err != nil {
-						logger.Warnf("Error setting log level: %v\n", err)
-					}
-
-					ps, err := pstoremem.NewPeerstore()
-					if err != nil {
-						return fmt.Errorf("creating peerstore: %w", err)
-					}
-
-					ldb, err := leveldb.NewDatastore("", nil) // empty string means in-memory
-					if err != nil {
-						return fmt.Errorf("creating in-memory leveldb: %w", err)
-					}
-
-					priv, _, err := crypto.GenerateEd25519Key(rand.Reader)
-					if err != nil {
-						return fmt.Errorf("generating key: %w", err)
-					}
-
-					antsEvents := make(chan ants2.RequestEvent, 1024)
-					defer close(antsEvents)
-
-					cfg := &ants.AntConfig{
-						PrivateKey:     priv,
-						UserAgent:      "test-ant",
-						Port:           12000,
-						ProtocolPrefix: fmt.Sprintf("/celestia/%s", "celestia"),
-						BootstrapPeers: ants.BootstrapPeers("celestia"),
-						EventsChan:     antsEvents,
-					}
-
-					go func() {
-						for range antsEvents {
-							// no-op
-						}
-					}()
-
-					ant, err := ants.SpawnAnt(c.Context, ps, ldb, cfg)
-					if err != nil {
-						return fmt.Errorf("creating ants: %w", err)
-					}
-
-					ctx, cancel := signal.NotifyContext(c.Context, syscall.SIGINT, syscall.SIGTERM)
-					defer cancel()
-
-					<-ctx.Done()
-
-					if err := ant.Close(); err != nil {
-						logger.Warnf("Error closing ant: %v\n", err)
-					}
-
-					return nil
-				},
-			},
 			{
 				Name:  "queen",
 				Usage: "Starts the queen service",
@@ -229,6 +167,13 @@ func main() {
 						EnvVars:     []string{"ANTS_KEY_PATH"},
 						Destination: &queenConfig.KeyDBPath,
 						Value:       queenConfig.KeyDBPath,
+					},
+					&cli.PathFlag{
+						Name:        "certs.path",
+						Usage:       "The path where we store the TLC certificates",
+						EnvVars:     []string{"ANTS_CERTS_PATH"},
+						Destination: &queenConfig.CertsPath,
+						Value:       queenConfig.CertsPath,
 					},
 					&cli.IntFlag{
 						Name:        "first_port",
@@ -359,6 +304,7 @@ func runQueenCommand(c *cli.Context) error {
 
 	queenCfg := &ants.QueenConfig{
 		KeysDBPath:         queenConfig.KeyDBPath,
+		CertsPath:          queenConfig.CertsPath,
 		NPorts:             queenConfig.NumPorts,
 		FirstPort:          queenConfig.FirstPort,
 		UPnP:               queenConfig.UPnp,

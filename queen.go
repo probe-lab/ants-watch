@@ -34,6 +34,7 @@ var logger = log.Logger("ants-queen")
 
 type QueenConfig struct {
 	KeysDBPath         string
+	CertsPath          string
 	NPorts             int
 	FirstPort          int
 	UPnP               bool
@@ -94,7 +95,7 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 	queen := &Queen{
 		cfg:              cfg,
 		id:               uuid.NewString(),
-		nebulaDB:         NewNebulaDB(cfg.NebulaDBConnString, cfg.CrawlInterval),
+		nebulaDB:         NewNebulaDB(cfg.NebulaDBConnString, cfg.UserAgent, cfg.CrawlInterval),
 		keysDB:           NewKeysDB(cfg.KeysDBPath),
 		peerstore:        ps,
 		datastore:        ldb,
@@ -284,7 +285,6 @@ func (q *Queen) routine(ctx context.Context) {
 
 	// zones correspond to the prefixes of the tries that must be covered by an ant
 	zones := trieZones(networkTrie, q.cfg.BucketSize)
-	zones = zones[0:1] // TODO: Remove temporary
 	logger.Debugf("%d zones must be covered by ants", len(zones))
 
 	// convert string zone to bitstr.Key
@@ -346,6 +346,7 @@ func (q *Queen) routine(ctx context.Context) {
 			ProtocolPrefix: fmt.Sprintf("/celestia/%s", celestiaNet), // TODO: parameterize
 			BootstrapPeers: BootstrapPeers(celestiaNet),              // TODO: parameterize
 			EventsChan:     q.antsEvents,
+			CertPath:       q.cfg.CertsPath,
 		}
 
 		ant, err := SpawnAnt(ctx, q.peerstore, q.datastore, antCfg)

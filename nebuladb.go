@@ -15,16 +15,18 @@ type NebulaProvider interface {
 type NebulaDB struct {
 	ConnString    string
 	CrawlInterval time.Duration
+	UserAgent     string
 
 	connPool *pgxpool.Pool
 }
 
 var _ NebulaProvider = (*NebulaDB)(nil)
 
-func NewNebulaDB(connString string, crawlInterval time.Duration) *NebulaDB {
+func NewNebulaDB(connString string, userAgent string, crawlInterval time.Duration) *NebulaDB {
 	return &NebulaDB{
 		ConnString:    connString,
 		CrawlInterval: crawlInterval,
+		UserAgent:     userAgent,
 	}
 }
 
@@ -78,14 +80,16 @@ func (db *NebulaDB) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
 	peersQuery := `
 		SELECT p.multi_hash
 		FROM visits v
-		JOIN peers p ON p.id = v.peer_id
+			INNER JOIN peers p ON p.id = v.peer_id
+		    LEFT JOIN agent_versions av ON av.id = v.agent_version_id
 		WHERE v.visit_started_at >= $1
 			AND v.crawl_id = $2
 			AND v.connect_error IS NULL
+		    AND (av.agent_version IS NULL OR av.agent_version != $3)
 	`
 
 	beforeLastCrawlStarted := crawlIntervalAgo.Add(-db.CrawlInterval)
-	rows, err := db.connPool.Query(ctx, peersQuery, beforeLastCrawlStarted, crawlId)
+	rows, err := db.connPool.Query(ctx, peersQuery, beforeLastCrawlStarted, crawlId, db.UserAgent)
 	if err != nil {
 		logger.Warn("unable to get peers from Nebula DB: ", err)
 		return nil, err
