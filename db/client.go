@@ -25,6 +25,22 @@ type Client interface {
 	BulkInsertRequests(ctx context.Context, requests []*Request) error
 }
 
+type NoopClient struct{}
+
+var _ Client = (*NoopClient)(nil)
+
+func NewNoopClient() *NoopClient {
+	return &NoopClient{}
+}
+
+func (n NoopClient) Ping(ctx context.Context) error {
+	return nil
+}
+
+func (n NoopClient) BulkInsertRequests(ctx context.Context, requests []*Request) error {
+	return nil
+}
+
 type ClickhouseClient struct {
 	driver.Conn
 	telemetry *metrics.Telemetry
@@ -32,7 +48,7 @@ type ClickhouseClient struct {
 
 var _ Client = (*ClickhouseClient)(nil)
 
-func NewClient(address, database, username, password string, ssl bool, telemetry *metrics.Telemetry) (*ClickhouseClient, error) {
+func NewClickhouseClient(address, database, username, password string, ssl bool, telemetry *metrics.Telemetry) (*ClickhouseClient, error) {
 	logger.Infoln("Creating new clickhouse client...")
 
 	conn, err := clickhouse.Open(&clickhouse.Options{
