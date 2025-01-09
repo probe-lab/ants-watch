@@ -31,3 +31,4 @@ log.txt
 
 db/migrations/local
 p2p-forge-certs
+*.db
