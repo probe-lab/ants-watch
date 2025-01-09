@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"os"
 
-	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
-
 	"github.com/caddyserver/certmagic"
 	ds "github.com/ipfs/go-datastore"
 	p2pforge "github.com/ipshipyard/p2p-forge/client"
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/ants"
+	"github.com/libp2p/go-libp2p/core/connmgr"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	libp2ptcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	libp2pwebrtc "github.com/libp2p/go-libp2p/p2p/transport/webrtc"
@@ -102,8 +102,9 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	}
 
 	// Configure the resource manager to not limit anything
+	var noSubnetLimit []rcmgr.ConnLimitPerSubnet
 	limiter := rcmgr.NewFixedLimiter(rcmgr.InfiniteLimits)
-	rcmgr, err := rcmgr.NewResourceManager(limiter)
+	rm, err := rcmgr.NewResourceManager(limiter, rcmgr.WithLimitPerSubnet(noSubnetLimit, noSubnetLimit))
 	if err != nil {
 		return nil, fmt.Errorf("new resource manager: %w", err)
 	}
@@ -129,7 +130,8 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
 		libp2p.ShareTCPListener(),
-		libp2p.ResourceManager(rcmgr),
+		libp2p.ResourceManager(rm),
+		libp2p.ConnectionManager(connmgr.NullConnMgr{}),
 		libp2p.Transport(libp2ptcp.NewTCPTransport),
 		libp2p.Transport(libp2pquic.NewTransport),
 		libp2p.Transport(libp2pwebtransport.New),
