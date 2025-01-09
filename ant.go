@@ -128,7 +128,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.DisableRelay(),
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
-		// libp2p.ShareTCPListener(),
+		libp2p.ShareTCPListener(),
 		libp2p.ResourceManager(rm),
 		libp2p.ConnectionManager(connmgr.NullConnMgr{}),
 		libp2p.Transport(libp2ptcp.NewTCPTransport),
@@ -136,7 +136,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.Transport(libp2pwebtransport.New),
 		libp2p.Transport(libp2pwebrtc.New),
 		libp2p.Transport(libp2pws.New, libp2pws.WithTLSConfig(certMgr.TLSConfig())),
-		// libp2p.AddrsFactory(certMgr.AddressFactory()),
+		libp2p.AddrsFactory(certMgr.AddressFactory()),
 	}
 
 	if cfg.Port == 0 {
