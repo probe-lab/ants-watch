@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
+
 	"github.com/caddyserver/certmagic"
 	ds "github.com/ipfs/go-datastore"
 	p2pforge "github.com/ipshipyard/p2p-forge/client"
@@ -99,6 +101,13 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		return nil, fmt.Errorf("new p2pforge cert manager: %w", err)
 	}
 
+	// Configure the resource manager to not limit anything
+	limiter := rcmgr.NewFixedLimiter(rcmgr.InfiniteLimits)
+	rcmgr, err := rcmgr.NewResourceManager(limiter)
+	if err != nil {
+		return nil, fmt.Errorf("new resource manager: %w", err)
+	}
+
 	listenAddrs := []string{
 		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", cfg.Port),
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", cfg.Port),
@@ -120,6 +129,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
 		libp2p.ShareTCPListener(),
+		libp2p.ResourceManager(rcmgr),
 		libp2p.Transport(libp2ptcp.NewTCPTransport),
 		libp2p.Transport(libp2pquic.NewTransport),
 		libp2p.Transport(libp2pwebtransport.New),
