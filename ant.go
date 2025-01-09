@@ -24,6 +24,7 @@ import (
 	libp2pws "github.com/libp2p/go-libp2p/p2p/transport/websocket"
 	libp2pwebtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
+	"go.uber.org/zap"
 )
 
 const (
@@ -89,7 +90,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		p2pforge.WithOnCertLoaded(func() {
 			certLoadedChan <- struct{}{}
 		}),
-		p2pforge.WithLogger(logger.Desugar().Sugar()),
+		p2pforge.WithLogger(logger.Desugar().WithOptions(zap.IncreaseLevel(zap.InfoLevel)).Sugar()),
 		p2pforge.WithCertificateStorage(&certmagic.FileStorage{Path: cfg.CertPath}),
 	)
 	if err != nil {
