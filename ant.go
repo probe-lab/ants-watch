@@ -171,11 +171,11 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		logger.Warn("bootstrap failed: %s", err)
 	}
 
-	certMgr.ProvideHost(h)
-
-	if err = certMgr.Start(); err != nil {
-		return nil, fmt.Errorf("start cert manager: %w", err)
-	}
+	//certMgr.ProvideHost(h)
+	//
+	//if err = certMgr.Start(); err != nil {
+	//	return nil, fmt.Errorf("start cert manager: %w", err)
+	//}
 
 	go func() {
 		for range certLoadedChan {
