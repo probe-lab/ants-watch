@@ -101,6 +101,31 @@ func Test_parseAgentVersion(t *testing.T) {
 				typ:  "other",
 			},
 		},
+		{
+			av: "lumina/mainnet/0.3.5",
+			want: agentVersionInfo{
+				full:  "lumina/mainnet/0.3.5",
+				typ:   "lumina",
+				major: 0,
+				minor: 3,
+				patch: 5,
+				hash:  "",
+			},
+		},
+		{
+			av: "lumina/mainnet/",
+			want: agentVersionInfo{
+				full: "lumina/mainnet/",
+				typ:  "lumina",
+			},
+		},
+		{
+			av: "lumina/mainnet/unknown",
+			want: agentVersionInfo{
+				full: "lumina/mainnet/unknown",
+				typ:  "lumina",
+			},
+		},
 	}
 
 	for _, tt := range tests {

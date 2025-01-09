@@ -36,40 +36,60 @@ func parseAgentVersion(av string) agentVersionInfo {
 		avi.typ = "celestia-celestia"
 		return avi
 	case strings.HasPrefix(av, "celestia-node/celestia/"):
-		// fallthrough
-	default:
-		avi.typ = "other"
-		return avi
-	}
 
-	parts := strings.Split(av, "/")
-	if len(parts) > 2 {
-		switch parts[2] {
-		case "bridge", "full", "light":
-			avi.typ = parts[2]
-		default:
-			avi.typ = "other"
+		parts := strings.Split(av, "/")
+		if len(parts) > 2 {
+			switch parts[2] {
+			case "bridge", "full", "light":
+				avi.typ = parts[2]
+			default:
+				avi.typ = "other"
+			}
 		}
-	}
 
-	if len(parts) > 3 {
-		matches := semverRegex.FindStringSubmatch(parts[3])
-		if matches != nil {
-			for i, name := range semverRegex.SubexpNames() {
-				switch name {
-				case "major":
-					avi.major, _ = strconv.Atoi(matches[i])
-				case "minor":
-					avi.minor, _ = strconv.Atoi(matches[i])
-				case "patch":
-					avi.patch, _ = strconv.Atoi(matches[i])
+		if len(parts) > 3 {
+			matches := semverRegex.FindStringSubmatch(parts[3])
+			if matches != nil {
+				for i, name := range semverRegex.SubexpNames() {
+					switch name {
+					case "major":
+						avi.major, _ = strconv.Atoi(matches[i])
+					case "minor":
+						avi.minor, _ = strconv.Atoi(matches[i])
+					case "patch":
+						avi.patch, _ = strconv.Atoi(matches[i])
+					}
 				}
 			}
 		}
-	}
 
-	if len(parts) > 4 && hexRegex.MatchString(parts[4]) {
-		avi.hash = parts[4]
+		if len(parts) > 4 && hexRegex.MatchString(parts[4]) {
+			avi.hash = parts[4]
+		}
+	case strings.HasPrefix(av, "lumina"):
+		avi.typ = "lumina"
+		parts := strings.Split(av, "/")
+
+		if len(parts) > 2 {
+			matches := semverRegex.FindStringSubmatch(parts[2])
+			if matches != nil {
+				for i, name := range semverRegex.SubexpNames() {
+					switch name {
+					case "major":
+						avi.major, _ = strconv.Atoi(matches[i])
+					case "minor":
+						avi.minor, _ = strconv.Atoi(matches[i])
+					case "patch":
+						avi.patch, _ = strconv.Atoi(matches[i])
+					}
+				}
+			}
+		}
+
+		return avi
+	default:
+		avi.typ = "other"
+		return avi
 	}
 
 	return avi
