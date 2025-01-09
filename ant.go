@@ -194,7 +194,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 					default:
 						continue
 					}
-					logger.Infof("  [%d] %s %s", i, actionStr, maddr.Address)
+					logger.Infof("  [%d] %s %s/p2p/%s", i, actionStr, maddr.Address, h.ID())
 				}
 			case event.EvtLocalReachabilityChanged:
 				logger.Infow("Reachability changed", "ant", h.ID(), "reachability", evt.Reachability)
