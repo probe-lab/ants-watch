@@ -80,6 +80,11 @@ func main() {
 				Name:  "ant",
 				Usage: "Starts a test ant",
 				Action: func(c *cli.Context) error {
+					err := logging.SetLogLevel("tcp-demultiplex", "debug")
+					if err != nil {
+						logger.Warnf("Error setting log level: %v\n", err)
+					}
+
 					ps, err := pstoremem.NewPeerstore()
 					if err != nil {
 						return fmt.Errorf("creating peerstore: %w", err)
