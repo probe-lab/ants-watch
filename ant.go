@@ -102,10 +102,8 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	}
 
 	// Configure the resource manager to not limit anything
-	var (
-		noSubnetLimit    []rcmgr.ConnLimitPerSubnet
-		noNetPrefixLimit []rcmgr.NetworkPrefixLimit
-	)
+	noSubnetLimit := []rcmgr.ConnLimitPerSubnet{}
+	noNetPrefixLimit := []rcmgr.NetworkPrefixLimit{}
 	limiter := rcmgr.NewFixedLimiter(rcmgr.InfiniteLimits)
 	rm, err := rcmgr.NewResourceManager(limiter,
 		rcmgr.WithLimitPerSubnet(noSubnetLimit, noSubnetLimit),
