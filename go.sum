@@ -196,8 +196,6 @@ github.com/ipfs/go-test v0.0.4 h1:DKT66T6GBB6PsDFLoO56QZPrOmzJkqU1FZH5C9ySkew=
 github.com/ipfs/go-test v0.0.4/go.mod h1:qhIM1EluEfElKKM6fnWxGn822/z9knUGM1+I/OAQNKI=
 github.com/ipld/go-ipld-prime v0.21.0 h1:n4JmcpOlPDIxBcY037SVfpd1G+Sj1nKZah0m6QH9C2E=
 github.com/ipld/go-ipld-prime v0.21.0/go.mod h1:3RLqy//ERg/y5oShXXdx5YIp50cFGOanyMctpPjsvxQ=
-github.com/ipshipyard/p2p-forge v0.2.1 h1:7tsriNf+crQyFD501SN50rcA1SpF4lKnGMj6BGfETj4=
-github.com/ipshipyard/p2p-forge v0.2.1/go.mod h1:pJ/BLfMTs/UE16wdcJnGsUE0eYCOPFu6H/Oz7gJVmHA=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a h1:bbPeKD0xmW/Y25WS6cokEszi5g+S0QxI/d45PkRi7Nk=
@@ -403,6 +401,8 @@ github.com/polydawn/refmt v0.89.0 h1:ADJTApkvkeBZsN0tBTx8QjpD9JkmxbKp0cxfr9qszm4
 github.com/polydawn/refmt v0.89.0/go.mod h1:/zvteZs/GwLtCgZ4BL6CBsk9IKIlexP43ObX9AxTqTw=
 github.com/probe-lab/go-libdht v0.1.2-0.20240821100354-770d7b4b2e71 h1:REjguBnnfbMAVMTQg1tjUtgKWiTTO9b+hmJLxQK2Ook=
 github.com/probe-lab/go-libdht v0.1.2-0.20240821100354-770d7b4b2e71/go.mod h1:DtQ0H+YdJQlBiyayohV8fKusnjqk88+yuwDKltan8ks=
+github.com/probe-lab/p2p-forge v0.0.0-20250109130213-851dab1b27cb h1:lyP7y9MaHXAEaq3mByhyT6Mhh+MwwfADvHlGge7NQXE=
+github.com/probe-lab/p2p-forge v0.0.0-20250109130213-851dab1b27cb/go.mod h1:pJ/BLfMTs/UE16wdcJnGsUE0eYCOPFu6H/Oz7gJVmHA=
 github.com/prometheus/client_golang v0.8.0/go.mod h1:7SWBe2y4D6OKWSNQJUaRYU/AaXPKyh/dDVn+NZz0KFw=
 github.com/prometheus/client_golang v1.20.5 h1:cxppBPuYhUnsO6yo/aoRol4L7q7UFfdm+bR9r+8l63Y=
 github.com/prometheus/client_golang v1.20.5/go.mod h1:PIEt8X02hGcP8JWbeHyeZ53Y/jReSnHgO035n//V5WE=
