@@ -10,6 +10,7 @@ import (
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 )
 
+// PeerIDToKadID converts a libp2p peer.ID to its binary kademlia identifier
 func PeerIDToKadID(pid peer.ID) bit256.Key {
 	hasher, err := mhreg.GetHasher(mh.SHA2_256)
 	if err != nil {
