@@ -132,6 +132,7 @@ func (q *Queen) freePort(port int) {
 	}
 }
 
+// Run makes the queen orchestrate the ant nest
 func (q *Queen) Run(ctx context.Context) error {
 	logger.Infoln("Queen.Run started")
 	defer logger.Infoln("Queen.Run completing")
@@ -271,20 +272,26 @@ func (q *Queen) persistLiveAntsKeys() {
 	logger.Debugf("Number of antsKeys persisted: %d", len(antsKeys))
 }
 
+// routine must be called periodically to ensure that the number and positions
+// of ants is still relevant given the latest observed DHT servers.
 func (q *Queen) routine(ctx context.Context) {
+	// get online DHT servers from the Nebula database
 	networkPeers, err := q.nebulaDB.GetLatestPeerIds(ctx)
 	if err != nil {
 		logger.Warn("unable to get latest peer ids from Nebula ", err)
 		return
 	}
 
+	// build a binary trie from the network peers
 	networkTrie := trie.New[bit256.Key, peer.ID]()
 	for _, peerId := range networkPeers {
 		networkTrie.Add(PeerIDToKadID(peerId), peerId)
 	}
 
-	// zones correspond to the prefixes of the tries that must be covered by an ant
-	zones := trieZones(networkTrie, q.cfg.BucketSize)
+	// zones correspond to the prefixes of the tries that must be covered by an
+	// ant. One ant's kademlia ID MUST match each of the returned prefixes in
+	// order to ensure global coverage.
+	zones := trieZones(networkTrie, q.cfg.BucketSize-1)
 	logger.Debugf("%d zones must be covered by ants", len(zones))
 
 	// convert string zone to bitstr.Key
@@ -294,20 +301,20 @@ func (q *Queen) routine(ctx context.Context) {
 	}
 
 	var excessAntsIndices []int
-	// remove keys covered by existing ants, and mark useless ants
+	// remove keys covered by existing ants, and mark ants that aren't needed anymore
 	for index, ant := range q.ants {
 		matchedKey := false
 		for i, missingKey := range missingKeys {
 			if key.CommonPrefixLength(ant.kadID, missingKey) == missingKey.BitLen() {
-				// remove key from missingKeys since covered by current ant
+				// remove key from missingKeys since covered by exisitng
 				missingKeys = append(missingKeys[:i], missingKeys[i+1:]...)
 				matchedKey = true
 				break
 			}
 		}
 		if !matchedKey {
-			// this ant is not needed anymore
-			// two ants end up in the same zone, the younger one is discarded
+			// This ant is not needed anymore. Two ants end up in the same zone, the
+			// younger one is discarded.
 			excessAntsIndices = append(excessAntsIndices, index)
 		}
 	}
@@ -315,7 +322,7 @@ func (q *Queen) routine(ctx context.Context) {
 	logger.Debugf("need %d extra ants", len(missingKeys))
 	logger.Debugf("removing %d ants", len(excessAntsIndices))
 
-	// remove ants
+	// kill ants that are not needed anymore
 	returnedKeys := make([]crypto.PrivKey, len(excessAntsIndices))
 	for i, index := range excessAntsIndices {
 		ant := q.ants[index]
@@ -330,8 +337,9 @@ func (q *Queen) routine(ctx context.Context) {
 		q.freePort(port)
 	}
 
-	// add missing ants
+	// get libp2p private keys whose kademlia id matches the missing key prefixes
 	privKeys := q.keysDB.MatchingKeys(missingKeys, returnedKeys)
+	// add missing ants
 	for _, key := range privKeys {
 		port, err := q.takeAvailablePort()
 		if err != nil {
@@ -364,19 +372,41 @@ func (q *Queen) routine(ctx context.Context) {
 	logger.Debug("queen routine over")
 }
 
+// trieZones is a recursive function returning the prefixes that the ants must
+// have in order to cover the complete keyspace. The prefixes correspond to
+// subtries/branches, that have at most zoneSize (=bucketSize-1) peers. They
+// must be the largest subtries with at most zoneSize peers. The returned
+// prefixes cover the whole keyspace even if they don't all have the same
+// length.
+//
+// e.g ["00", "010", "001", "1"] is a valid return value since the prefixes
+// cover all possible values. In this specific example, the trie would be
+// unbalanced, and would have only a few peers with the prefix "1", than
+// starting with "0".
 func trieZones[K kad.Key[K], T any](t *trie.Trie[K, T], zoneSize int) []string {
 	if t.Size() < zoneSize {
+		// We've hit the bottom of the trie. There are less peers in the (sub)trie
+		// than the zone size, hence spawning a single ant is enough to cover this
+		// (sub)trie.
+		//
+		// Since we are't aware of the subtrie location in the greater trie, it is
+		// the parent's responsibility to add the prefix.
 		return []string{""}
 	}
 
+	// a trie is composed of two branches, respectively starting with "0" and
+	// "1". Take the returned prefixes from each branch (subtrie), and add the
+	// corresponding prefix before returning them to the parent.
 	zones := []string{}
 	if !t.Branch(0).IsLeaf() {
 		for _, zone := range trieZones(t.Branch(0), zoneSize) {
 			zones = append(zones, "0"+zone)
 		}
 	}
-	for _, zone := range trieZones(t.Branch(1), zoneSize) {
-		zones = append(zones, "1"+zone)
+	if !t.Branch(1).IsLeaf() {
+		for _, zone := range trieZones(t.Branch(1), zoneSize) {
+			zones = append(zones, "1"+zone)
+		}
 	}
 	return zones
 }

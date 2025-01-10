@@ -91,6 +91,8 @@ func (db *KeysDB) writeKeysToFile(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey
 	}
 }
 
+// integrateKeysIntoTrie converts the provided privkeys into kademlia ids and
+// adds them to the provided binary trie
 func integrateKeysIntoTrie(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey], keys []crypto.PrivKey) {
 	for _, key := range keys {
 		if key == nil {
@@ -115,6 +117,10 @@ func genKey() crypto.PrivKey {
 	return priv
 }
 
+// getMatchingKeys will return a list of private keys whose kademlia IDs match
+// the provided list of prefixes, by looking for matches in the provided binary
+// trie, and if no match by bruteforcing new keys until a match is found. All
+// keys generated during bruteforces are added to the trie.
 func getMatchingKeys(prefixes []bitstr.Key, keysTrie *trie.Trie[bit256.Key, crypto.PrivKey]) []crypto.PrivKey {
 	// generate a random mask to be used as key suffix. If the same suffix is
 	// used for all keys, the trie will be unbalanced
@@ -156,6 +162,9 @@ func getMatchingKeys(prefixes []bitstr.Key, keysTrie *trie.Trie[bit256.Key, cryp
 	return keys
 }
 
+// MatchingKeys returns a list of private keys whose kademlia IDs match the
+// provided list of prefixes. It also write back to disk the returned private
+// keys for future use.
 func (db *KeysDB) MatchingKeys(prefixes []bitstr.Key, returned []crypto.PrivKey) []crypto.PrivKey {
 	// read keys from disk
 	keysTrie := db.readKeysFromFile()
