@@ -323,6 +323,8 @@ func (q *Queen) routine(ctx context.Context) {
 	logger.Debugf("removing %d ants", len(excessAntsIndices))
 
 	// kill ants that are not needed anymore
+	// sort indices in descending order to remove from end first
+	sort.Sort(sort.Reverse(sort.IntSlice(excessAntsIndices)))
 	returnedKeys := make([]crypto.PrivKey, len(excessAntsIndices))
 	for i, index := range excessAntsIndices {
 		ant := q.ants[index]
