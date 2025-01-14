@@ -3,17 +3,19 @@ package ants
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/caddyserver/certmagic"
 	ds "github.com/ipfs/go-datastore"
 	p2pforge "github.com/ipshipyard/p2p-forge/client"
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p-kad-dht/ants"
+	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p/core/connmgr"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -23,6 +25,8 @@ import (
 	libp2pwebrtc "github.com/libp2p/go-libp2p/p2p/transport/webrtc"
 	libp2pws "github.com/libp2p/go-libp2p/p2p/transport/websocket"
 	libp2pwebtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
+	"github.com/multiformats/go-multiaddr"
+	mh "github.com/multiformats/go-multihash"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 	"go.uber.org/zap"
 )
@@ -32,13 +36,37 @@ const (
 	userAgent   = "celestiant"
 )
 
+type RequestEvent struct {
+	Timestamp    time.Time
+	Self         peer.ID
+	Remote       peer.ID
+	Type         pb.Message_MessageType
+	Target       mh.Multihash
+	AgentVersion string
+	Protocols    []protocol.ID
+	Maddrs       []multiaddr.Multiaddr
+	ConnMaddr    multiaddr.Multiaddr
+}
+
+func (r *RequestEvent) IsIdentified() bool {
+	return r.AgentVersion != "" && len(r.Protocols) > 0 && len(r.Maddrs) > 0
+}
+
+func (r *RequestEvent) MaddrStrings() []string {
+	maddrStrs := make([]string, len(r.Maddrs))
+	for i, maddr := range r.Maddrs {
+		maddrStrs[i] = maddr.String()
+	}
+	return maddrStrs
+}
+
 type AntConfig struct {
 	PrivateKey     crypto.PrivKey
 	UserAgent      string
 	Port           int
 	ProtocolPrefix string
 	BootstrapPeers []peer.AddrInfo
-	EventsChan     chan ants.RequestEvent
+	RequestsChan   chan<- RequestEvent
 	CertPath       string
 }
 
@@ -59,8 +87,8 @@ func (cfg *AntConfig) Validate() error {
 		return fmt.Errorf("bootstrap peers are not set")
 	}
 
-	if cfg.EventsChan == nil {
-		return fmt.Errorf("events channel is not set")
+	if cfg.RequestsChan == nil {
+		return fmt.Errorf("requests channel is not set")
 	}
 
 	return nil
@@ -154,7 +182,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		kad.BootstrapPeers(cfg.BootstrapPeers...),
 		kad.ProtocolPrefix(protocol.ID(cfg.ProtocolPrefix)),
 		kad.Datastore(ds),
-		kad.RequestsLogChan(cfg.EventsChan),
+		kad.OnRequestHook(onRequestHook(h, cfg)),
 	}
 	dht, err := kad.New(ctx, h, dhtOpts...)
 	if err != nil {
@@ -179,7 +207,10 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		logger.Debug("certificate loaded channel closed")
 	}()
 
-	sub, err := h.EventBus().Subscribe([]interface{}{new(event.EvtLocalAddressesUpdated), new(event.EvtLocalReachabilityChanged)})
+	sub, err := h.EventBus().Subscribe([]interface{}{
+		new(event.EvtLocalAddressesUpdated),
+		new(event.EvtLocalReachabilityChanged),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("subscribe to event bus: %w", err)
 	}
@@ -205,7 +236,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 					default:
 						continue
 					}
-					logger.Infof("  [%d] %s %s/p2p/%s", i, actionStr, maddr.Address, h.ID())
+					logger.Infof("[%d] %s %s/p2p/%s", i, actionStr, maddr.Address, h.ID())
 				}
 			case event.EvtLocalReachabilityChanged:
 				logger.Infow("Reachability changed", "ant", h.ID(), "reachability", evt.Reachability)
@@ -224,6 +255,33 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	}
 
 	return ant, nil
+}
+
+func onRequestHook(h host.Host, cfg *AntConfig) func(ctx context.Context, s network.Stream, req pb.Message) {
+	return func(ctx context.Context, s network.Stream, req pb.Message) {
+		remotePeer := s.Conn().RemotePeer()
+
+		agentVersion := ""
+		val, err := h.Peerstore().Get(remotePeer, "AgentVersion")
+		if err == nil {
+			agentVersion = val.(string)
+		}
+
+		maddrs := h.Peerstore().Addrs(remotePeer)
+		protocolIDs, _ := h.Peerstore().GetProtocols(remotePeer) // ignore error
+
+		cfg.RequestsChan <- RequestEvent{
+			Timestamp:    time.Now(),
+			Self:         h.ID(),
+			Remote:       remotePeer,
+			Type:         req.GetType(),
+			Target:       req.GetKey(),
+			AgentVersion: agentVersion,
+			Protocols:    protocolIDs,
+			Maddrs:       maddrs,
+			ConnMaddr:    s.Conn().RemoteMultiaddr(),
+		}
+	}
 }
 
 func (a *Ant) Close() error {
