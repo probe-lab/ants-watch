@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/probe-lab/ants-watch/metrics"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
-
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	logging "github.com/ipfs/go-log/v2"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/net/proxy"
+
+	"github.com/probe-lab/ants-watch/metrics"
 )
 
 var logger = logging.Logger("db")
