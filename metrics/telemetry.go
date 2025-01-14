@@ -33,6 +33,7 @@ const (
 type Telemetry struct {
 	Tracer                  trace.Tracer
 	AntsCountGauge          metric.Int64Gauge
+	TrackedRequestsCounter  metric.Int64Counter
 	BulkInsertCounter       metric.Int64Counter
 	BulkInsertSizeHist      metric.Int64Histogram
 	BulkInsertLatencyMsHist metric.Int64Histogram
@@ -45,6 +46,11 @@ func NewTelemetry(tp trace.TracerProvider, mp metric.MeterProvider) (*Telemetry,
 	antsCountGauge, err := meter.Int64Gauge("ants_count", metric.WithDescription("Number of running ants"))
 	if err != nil {
 		return nil, fmt.Errorf("ants_count gauge: %w", err)
+	}
+
+	trackedRequestsCounter, err := meter.Int64Counter("tracked_requests_count", metric.WithDescription("Number requests tracked"))
+	if err != nil {
+		return nil, fmt.Errorf("tracked_requests_count gauge: %w", err)
 	}
 
 	bulkInsertCounter, err := meter.Int64Counter("bulk_insert_count", metric.WithDescription("Number of bulk inserts"))
@@ -69,6 +75,7 @@ func NewTelemetry(tp trace.TracerProvider, mp metric.MeterProvider) (*Telemetry,
 
 	return &Telemetry{
 		Tracer:                  tp.Tracer(TracerName),
+		TrackedRequestsCounter:  trackedRequestsCounter,
 		BulkInsertCounter:       bulkInsertCounter,
 		BulkInsertSizeHist:      bulkInsertSizeHist,
 		BulkInsertLatencyMsHist: bulkInsertLatencyMsHist,

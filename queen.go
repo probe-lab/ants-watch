@@ -12,7 +12,6 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p-kad-dht/ants"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
@@ -31,6 +30,15 @@ import (
 )
 
 var logger = log.Logger("ants-queen")
+
+type cacheEntry[T any] struct {
+	value   T
+	addedAt time.Time
+}
+
+func (c cacheEntry[T]) IsExpired() bool {
+	return time.Since(c.addedAt) > 7*24*time.Hour
+}
 
 type QueenConfig struct {
 	KeysDBPath         string
@@ -55,13 +63,15 @@ type Queen struct {
 	nebulaDB *NebulaDB
 	keysDB   *KeysDB
 
-	peerstore      peerstore.Peerstore
-	datastore      ds.Batching
-	agentsCache    *lru.Cache[string, agentVersionInfo]
-	protocolsCache *lru.Cache[string, []protocol.ID]
+	peerstore peerstore.Peerstore
+	datastore ds.Batching
+
+	agentsCache    *lru.Cache[string, cacheEntry[agentVersionInfo]]
+	protocolsCache *lru.Cache[string, cacheEntry[[]protocol.ID]]
+	maddrsCache    *lru.Cache[string, cacheEntry[[]string]]
 
 	ants       []*Ant
-	antsEvents chan ants.RequestEvent
+	antsEvents chan RequestEvent
 
 	// portsOccupancy is a slice of bools that represent the occupancy of the ports
 	// false corresponds to an available port, true to an occupied port
@@ -82,14 +92,19 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 		return nil, fmt.Errorf("creating in-memory leveldb: %w", err)
 	}
 
-	agentsCache, err := lru.New[string, agentVersionInfo](cfg.CacheSize)
+	agentsCache, err := lru.New[string, cacheEntry[agentVersionInfo]](cfg.CacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("init agents cache: %w", err)
 	}
 
-	protocolsCache, err := lru.New[string, []protocol.ID](cfg.CacheSize)
+	protocolsCache, err := lru.New[string, cacheEntry[[]protocol.ID]](cfg.CacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("init agents cache: %w", err)
+	}
+
+	maddrsCache, err := lru.New[string, cacheEntry[[]string]](cfg.CacheSize)
+	if err != nil {
+		return nil, fmt.Errorf("init maddrs cache: %w", err)
 	}
 
 	queen := &Queen{
@@ -100,9 +115,10 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 		peerstore:        ps,
 		datastore:        ldb,
 		ants:             []*Ant{},
-		antsEvents:       make(chan ants.RequestEvent, 1024),
+		antsEvents:       make(chan RequestEvent, 1024),
 		agentsCache:      agentsCache,
 		protocolsCache:   protocolsCache,
+		maddrsCache:      maddrsCache,
 		clickhouseClient: clickhouseClient,
 		portsOccupancy:   make([]bool, cfg.NPorts),
 	}
@@ -183,67 +199,15 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 
 		case evt := <-q.antsEvents:
 
-			// transform multi addresses
-			maddrStrs := make([]string, len(evt.Maddrs))
-			for i, maddr := range evt.Maddrs {
-				maddrStrs[i] = maddr.String()
-			}
-
-			avi := parseAgentVersion(evt.AgentVersion)
-
-			// cache agent version
-			if avi.full == "" {
-				var found bool
-				avi, found = q.agentsCache.Get(evt.Remote.String())
-				q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
-					attribute.String("hit", strconv.FormatBool(found)),
-					attribute.String("cache", "agent_version"),
-				))
-			} else {
-				q.agentsCache.Add(evt.Remote.String(), avi)
-			}
-
-			// cache protocols
-			var protocols []protocol.ID
-			if len(evt.Protocols) == 0 {
-				var found bool
-				protocols, found = q.protocolsCache.Get(evt.Remote.String())
-				q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
-					attribute.String("hit", strconv.FormatBool(found)),
-					attribute.String("cache", "protocols"),
-				))
-			} else {
-				protocols = evt.Protocols
-				q.protocolsCache.Add(evt.Remote.String(), evt.Protocols)
-			}
-			protocolStrs := protocol.ConvertToStrings(protocols)
-			sort.Strings(protocolStrs)
-
-			uuidv7, err := uuid.NewV7()
+			request, err := q.handleRequestEvent(ctx, evt, requests)
 			if err != nil {
-				logger.Warn("Error generating uuid")
+				logger.Warn("Error handling request event: ", err)
 				continue
 			}
 
-			request := &db.Request{
-				UUID:               uuidv7,
-				QueenID:            q.id,
-				AntID:              evt.Self,
-				RemoteID:           evt.Remote,
-				RequestType:        evt.Type,
-				AgentVersion:       avi.full,
-				AgentVersionType:   avi.typ,
-				AgentVersionSemVer: avi.Semver(),
-				Protocols:          protocolStrs,
-				StartedAt:          evt.Timestamp,
-				KeyID:              evt.Target.B58String(),
-				MultiAddresses:     maddrStrs,
-			}
-
 			requests = append(requests, request)
-
 			if len(requests) >= q.cfg.BatchSize {
-				if err = q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
+				if err := q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
 					logger.Errorf("Error inserting requests: %v", err)
 				}
 				requests = requests[:0]
@@ -260,6 +224,119 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 			requests = requests[:0]
 		}
 	}
+}
+
+func (q *Queen) handleRequestEvent(ctx context.Context, evt RequestEvent, requests []*db.Request) (*db.Request, error) {
+	q.cfg.Telemetry.TrackedRequestsCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("type", evt.Type.String()),
+	))
+
+	// The cache key is the remote's multi hash
+	cacheKey := evt.Remote.String()
+
+	// Agent Version Cache Lookup
+	avi := parseAgentVersion(evt.AgentVersion)
+	if avi.full == "" {
+		// no agent version given, check our cache
+		aviCacheEntry, found := q.agentsCache.Get(cacheKey)
+		if found {
+			// we found a cache entry
+			if aviCacheEntry.IsExpired() {
+				// The entry is expired - remove value from the cache and pretend we didn't find anything
+				q.agentsCache.Remove(cacheKey)
+				found = false
+			} else {
+				// we found a cache entry that isn't expired
+				avi = aviCacheEntry.value
+			}
+		}
+
+		q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("hit", strconv.FormatBool(found)),
+			attribute.String("cache", "agent_version"),
+		))
+	} else {
+		// there is a valid agent version - update cache
+		q.agentsCache.Add(cacheKey, cacheEntry[agentVersionInfo]{
+			value:   avi,
+			addedAt: time.Now(),
+		})
+	}
+
+	// Protocols Cache Lookup
+	var protocols []protocol.ID
+	if len(evt.Protocols) == 0 {
+		protocolsCacheEntry, found := q.protocolsCache.Get(cacheKey)
+		if found {
+			// we found a cache entry
+			if protocolsCacheEntry.IsExpired() {
+				// The entry is expired - remove value from the cache and pretend we didn't find anything
+				q.protocolsCache.Remove(cacheKey)
+				found = false
+			} else {
+				// we found a cache entry that isn't expired
+				protocols = protocolsCacheEntry.value
+			}
+		}
+
+		q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("hit", strconv.FormatBool(found)),
+			attribute.String("cache", "protocols"),
+		))
+	} else {
+		protocols = evt.Protocols
+		q.protocolsCache.Add(cacheKey, cacheEntry[[]protocol.ID]{
+			value:   evt.Protocols,
+			addedAt: time.Now(),
+		})
+	}
+	protocolStrs := protocol.ConvertToStrings(protocols)
+	sort.Strings(protocolStrs)
+
+	// MultiAddresses Cache Lookup
+	maddrStrs := evt.MaddrStrings()
+	if len(maddrStrs) == 0 {
+		maddrStrsCacheEntry, found := q.maddrsCache.Get(cacheKey)
+		if found {
+			if maddrStrsCacheEntry.IsExpired() {
+				q.maddrsCache.Remove(cacheKey)
+				found = false
+			} else {
+				maddrStrs = maddrStrsCacheEntry.value
+			}
+		}
+		q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("hit", strconv.FormatBool(found)),
+			attribute.String("cache", "maddrs"),
+		))
+	} else {
+		q.maddrsCache.Add(cacheKey, cacheEntry[[]string]{
+			value:   maddrStrs,
+			addedAt: time.Now(),
+		})
+	}
+	sort.Strings(maddrStrs)
+
+	uuidv7, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("creating uuid: %w", err)
+	}
+
+	return &db.Request{
+		UUID:               uuidv7,
+		QueenID:            q.id,
+		AntID:              evt.Self,
+		RemoteID:           evt.Remote,
+		RequestType:        evt.Type,
+		AgentVersion:       avi.full,
+		AgentVersionType:   avi.typ,
+		AgentVersionSemVer: avi.Semver(),
+		Protocols:          protocolStrs,
+		StartedAt:          evt.Timestamp,
+		KeyID:              evt.Target.B58String(),
+		MultiAddresses:     maddrStrs,
+		ConnMaddr:          evt.ConnMaddr.String(),
+	}, nil
 }
 
 func (q *Queen) persistLiveAntsKeys() {
@@ -355,7 +432,7 @@ func (q *Queen) routine(ctx context.Context) {
 			Port:           port,
 			ProtocolPrefix: fmt.Sprintf("/celestia/%s", celestiaNet), // TODO: parameterize
 			BootstrapPeers: BootstrapPeers(celestiaNet),              // TODO: parameterize
-			EventsChan:     q.antsEvents,
+			RequestsChan:   q.antsEvents,
 			CertPath:       q.cfg.CertsPath,
 		}
 
