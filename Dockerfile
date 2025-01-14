@@ -8,7 +8,6 @@ RUN apk add --no-cache gcc musl-dev git
 
 WORKDIR /build
 
-COPY go-libp2p-kad-dht /build/go-libp2p-kad-dht/
 COPY go.mod go.sum ./
 RUN go mod download
 
