@@ -21,4 +21,5 @@ type Request struct {
 	StartedAt          time.Time              `ch:"started_at"`
 	KeyID              string                 `ch:"key_multihash"`
 	MultiAddresses     []string               `ch:"multi_addresses"`
+	ConnMaddr          string                 `ch:"conn_maddr"`
 }
