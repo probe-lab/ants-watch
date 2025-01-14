@@ -176,14 +176,14 @@ func main() {
 						Value:       queenConfig.CertsPath,
 					},
 					&cli.IntFlag{
-						Name:        "first_port",
+						Name:        "first.port",
 						Usage:       "First port ants can listen on",
 						EnvVars:     []string{"ANTS_FIRST_PORT"},
 						Destination: &queenConfig.FirstPort,
 						Value:       queenConfig.FirstPort,
 					},
 					&cli.IntFlag{
-						Name:        "num_ports",
+						Name:        "num.ports",
 						Usage:       "Number of ports ants can listen on",
 						EnvVars:     []string{"ANTS_NUM_PORTS"},
 						Destination: &queenConfig.NumPorts,
