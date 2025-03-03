@@ -5,10 +5,10 @@
 [![ProbeLab](https://img.shields.io/badge/made%20by-ProbeLab-blue.svg)](https://probelab.io)
 ![License](https://img.shields.io/github/license/probe-lab/ants-watch)
 
-Ants watch is a DHT client monitoring tool. It is able to log the activity of all nodes in a DHT network by
+`ants watch` is a DHT client monitoring tool. It is able to log the activity of all nodes in a DHT network by
 carefully placing _ants_ in the DHT keyspace. For nodes to utilize the DHT they need to perform routing table maintenance tasks. 
-These tasks consists of requesting other nodes close to oneself in the DHT keyspace. Ants watch ensures
-that at least one of these requests will **always** hit one of the ants. If a request hits an ant we record information about the requesting peer like agent version,
+These tasks consist of sending requests to several other nodes close to oneself in the DHT keyspace. `ants watch` ensures
+that at least one of these requests will **always** hit one of the deployed ants. When a request hits an ant, we record information about the requesting peer like agent version,
 supported protocols, IP addresses, and more.
 
 **Supported networks:**
