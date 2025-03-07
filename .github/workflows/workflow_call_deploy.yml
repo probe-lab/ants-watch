@@ -3,6 +3,9 @@ name: Deployment (prod)
 on:
   workflow_call:
     inputs:
+      ref:
+        type: string
+        description: "Which ref should be checked out?"
       imageTag:
         required: true
         type: string
@@ -27,7 +30,7 @@ jobs:
       - name: Checking out repository code
         uses: actions/checkout@v4
         with:
-          submodules: true
+          ref: ${{ inputs.ref }}
 
       - name: Configuring AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

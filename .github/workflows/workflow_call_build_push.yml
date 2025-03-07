@@ -2,6 +2,10 @@ name: Build & Push (dev)
 
 on:
   workflow_call:
+    inputs:
+      ref:
+        type: string
+        description: "Which ref should be checked out?"
     outputs:
       imageTag:
         description: "The image tag that was pushed to ECR"
@@ -23,7 +27,7 @@ jobs:
       - name: Checking out the Repository
         uses: actions/checkout@v4
         with:
-          submodules: true
+          ref: ${{ inputs.ref }}
 
       - name: Configuring AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

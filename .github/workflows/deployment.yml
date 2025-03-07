@@ -1,13 +1,10 @@
-name: Push main
+name: Deployment
 
 on:
   workflow_dispatch:
     inputs:
       ref:
         description: "Which ref should be checked out?"
-  push:
-    branches:
-      - main
 
 jobs:
   test:
@@ -28,3 +25,16 @@ jobs:
     permissions:
       id-token: write
       contents: read
+
+  deploy:
+    name: Deployment
+    uses: ./.github/workflows/workflow_call_deploy.yml
+    needs: build_push
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      ref: ${{ inputs.ref }}
+      imageTag: ${{ needs.build_push.outputs.imageTag }}
+    secrets:
+      slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}

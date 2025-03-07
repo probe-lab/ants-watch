@@ -1,15 +1,20 @@
 name: Pull Request
 
 on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Which ref should be checked out?"
   pull_request:
     branches:
-      - dev
       - main
 
 jobs:
-  test:
-    name: Ants
-    uses: ./.github/workflows/test.yml
+  test_lint:
+    name: Test & Lint
+    uses: ./.github/workflows/workflow_call_test_lint.yml
+    with:
+      ref: ${{ inputs.ref }}
     permissions:
-      id-token: write
       contents: read
+      id-token: write
