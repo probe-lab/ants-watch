@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
-	lru "github.com/hashicorp/golang-lru/v2"
 	ds "github.com/ipfs/go-datastore"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-log/v2"
@@ -66,10 +64,6 @@ type Queen struct {
 	peerstore peerstore.Peerstore
 	datastore ds.Batching
 
-	agentsCache    *lru.Cache[string, cacheEntry[agentVersionInfo]]
-	protocolsCache *lru.Cache[string, cacheEntry[[]protocol.ID]]
-	maddrsCache    *lru.Cache[string, cacheEntry[[]string]]
-
 	ants       []*Ant
 	antsEvents chan RequestEvent
 
@@ -92,21 +86,6 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 		return nil, fmt.Errorf("creating in-memory leveldb: %w", err)
 	}
 
-	agentsCache, err := lru.New[string, cacheEntry[agentVersionInfo]](cfg.CacheSize)
-	if err != nil {
-		return nil, fmt.Errorf("init agents cache: %w", err)
-	}
-
-	protocolsCache, err := lru.New[string, cacheEntry[[]protocol.ID]](cfg.CacheSize)
-	if err != nil {
-		return nil, fmt.Errorf("init agents cache: %w", err)
-	}
-
-	maddrsCache, err := lru.New[string, cacheEntry[[]string]](cfg.CacheSize)
-	if err != nil {
-		return nil, fmt.Errorf("init maddrs cache: %w", err)
-	}
-
 	queen := &Queen{
 		cfg:              cfg,
 		id:               uuid.NewString(),
@@ -116,9 +95,6 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 		datastore:        ldb,
 		ants:             []*Ant{},
 		antsEvents:       make(chan RequestEvent, 1024),
-		agentsCache:      agentsCache,
-		protocolsCache:   protocolsCache,
-		maddrsCache:      maddrsCache,
 		clickhouseClient: clickhouseClient,
 		portsOccupancy:   make([]bool, cfg.NPorts),
 	}
@@ -231,90 +207,10 @@ func (q *Queen) handleRequestEvent(ctx context.Context, evt RequestEvent, reques
 		attribute.String("type", evt.Type.String()),
 	))
 
-	// The cache key is the remote's multi hash
-	cacheKey := evt.Remote.String()
-
-	// Agent Version Cache Lookup
-	avi := parseAgentVersion(evt.AgentVersion)
-	if avi.full == "" {
-		// no agent version given, check our cache
-		aviCacheEntry, found := q.agentsCache.Get(cacheKey)
-		if found {
-			// we found a cache entry
-			if aviCacheEntry.IsExpired() {
-				// The entry is expired - remove value from the cache and pretend we didn't find anything
-				q.agentsCache.Remove(cacheKey)
-				found = false
-			} else {
-				// we found a cache entry that isn't expired
-				avi = aviCacheEntry.value
-			}
-		}
-
-		q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("hit", strconv.FormatBool(found)),
-			attribute.String("cache", "agent_version"),
-		))
-	} else {
-		// there is a valid agent version - update cache
-		q.agentsCache.Add(cacheKey, cacheEntry[agentVersionInfo]{
-			value:   avi,
-			addedAt: time.Now(),
-		})
-	}
-
-	// Protocols Cache Lookup
-	var protocols []protocol.ID
-	if len(evt.Protocols) == 0 {
-		protocolsCacheEntry, found := q.protocolsCache.Get(cacheKey)
-		if found {
-			// we found a cache entry
-			if protocolsCacheEntry.IsExpired() {
-				// The entry is expired - remove value from the cache and pretend we didn't find anything
-				q.protocolsCache.Remove(cacheKey)
-				found = false
-			} else {
-				// we found a cache entry that isn't expired
-				protocols = protocolsCacheEntry.value
-			}
-		}
-
-		q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("hit", strconv.FormatBool(found)),
-			attribute.String("cache", "protocols"),
-		))
-	} else {
-		protocols = evt.Protocols
-		q.protocolsCache.Add(cacheKey, cacheEntry[[]protocol.ID]{
-			value:   evt.Protocols,
-			addedAt: time.Now(),
-		})
-	}
-	protocolStrs := protocol.ConvertToStrings(protocols)
+	protocolStrs := protocol.ConvertToStrings(evt.Protocols)
 	sort.Strings(protocolStrs)
 
-	// MultiAddresses Cache Lookup
 	maddrStrs := evt.MaddrStrings()
-	if len(maddrStrs) == 0 {
-		maddrStrsCacheEntry, found := q.maddrsCache.Get(cacheKey)
-		if found {
-			if maddrStrsCacheEntry.IsExpired() {
-				q.maddrsCache.Remove(cacheKey)
-				found = false
-			} else {
-				maddrStrs = maddrStrsCacheEntry.value
-			}
-		}
-		q.cfg.Telemetry.CacheHitCounter.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("hit", strconv.FormatBool(found)),
-			attribute.String("cache", "maddrs"),
-		))
-	} else {
-		q.maddrsCache.Add(cacheKey, cacheEntry[[]string]{
-			value:   maddrStrs,
-			addedAt: time.Now(),
-		})
-	}
 	sort.Strings(maddrStrs)
 
 	uuidv7, err := uuid.NewV7()
@@ -323,19 +219,17 @@ func (q *Queen) handleRequestEvent(ctx context.Context, evt RequestEvent, reques
 	}
 
 	return &db.Request{
-		UUID:               uuidv7,
-		QueenID:            q.id,
-		AntID:              evt.Self,
-		RemoteID:           evt.Remote,
-		RequestType:        evt.Type,
-		AgentVersion:       avi.full,
-		AgentVersionType:   avi.typ,
-		AgentVersionSemVer: avi.Semver(),
-		Protocols:          protocolStrs,
-		StartedAt:          evt.Timestamp,
-		KeyID:              evt.Target.B58String(),
-		MultiAddresses:     maddrStrs,
-		ConnMaddr:          evt.ConnMaddr.String(),
+		UUID:           uuidv7,
+		QueenID:        q.id,
+		AntID:          evt.Self,
+		RemoteID:       evt.Remote,
+		RequestType:    evt.Type,
+		AgentVersion:   evt.AgentVersion,
+		Protocols:      protocolStrs,
+		StartedAt:      evt.Timestamp,
+		KeyID:          evt.Target.B58String(),
+		MultiAddresses: maddrStrs,
+		ConnMaddr:      evt.ConnMaddr.String(),
 	}, nil
 }
 
