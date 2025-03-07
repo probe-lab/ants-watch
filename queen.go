@@ -29,15 +29,6 @@ import (
 
 var logger = log.Logger("ants-queen")
 
-type cacheEntry[T any] struct {
-	value   T
-	addedAt time.Time
-}
-
-func (c cacheEntry[T]) IsExpired() bool {
-	return time.Since(c.addedAt) > 7*24*time.Hour
-}
-
 type QueenConfig struct {
 	KeysDBPath         string
 	CertsPath          string
@@ -169,7 +160,6 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 				if err := q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
 					logger.Errorf("Error inserting requests: %v", err)
 				}
-				requests = requests[:0]
 			}
 			return
 

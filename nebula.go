@@ -114,9 +114,7 @@ func (db *NebulaDB) GetLatestPeerIds(ctx context.Context) ([]peer.ID, error) {
 	return peerIds, nil
 }
 
-type NebulaServiceProvider struct {
-	address string
-}
+type NebulaServiceProvider struct{}
 
 var _ NebulaProvider = (*NebulaServiceProvider)(nil)
 

@@ -65,9 +65,9 @@ var queenConfig = struct {
 }
 
 func main() {
-	logging.SetLogLevel("ants-queen", "debug")
-	logging.SetLogLevel("dht", "error")
-	logging.SetLogLevel("basichost", "info")
+	_ = logging.SetLogLevel("ants-queen", "debug")
+	_ = logging.SetLogLevel("dht", "error")
+	_ = logging.SetLogLevel("basichost", "info")
 
 	app := &cli.App{
 		Name:  "ants-watch",

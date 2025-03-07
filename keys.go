@@ -129,7 +129,7 @@ func getMatchingKeys(prefixes []bitstr.Key, keysTrie *trie.Trie[bit256.Key, cryp
 	// generate a random mask to be used as key suffix. If the same suffix is
 	// used for all keys, the trie will be unbalanced
 	randomMask := make([]byte, bit256.KeyLen)
-	rand.Read(randomMask)
+	_, _ = rand.Read(randomMask)
 
 	keys := make([]crypto.PrivKey, len(prefixes))
 	// find or generate a key for each prefix
