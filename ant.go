@@ -11,6 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+	"github.com/libp2p/go-libp2p/core/connmgr"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -149,7 +150,6 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
 	}
 
-	_ = rm
 	opts := []libp2p.Option{
 		libp2p.UserAgent(userAgent),
 		libp2p.Identity(cfg.PrivateKey),
@@ -158,8 +158,8 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.ListenAddrStrings(listenAddrs...),
 		libp2p.DisableMetrics(),
 		libp2p.ShareTCPListener(),
-		// libp2p.ResourceManager(rm),
-		// libp2p.ConnectionManager(connmgr.NullConnMgr{}),
+		libp2p.ResourceManager(rm),
+		libp2p.ConnectionManager(connmgr.NullConnMgr{}),
 		libp2p.Transport(libp2ptcp.NewTCPTransport),
 		libp2p.Transport(libp2pquic.NewTransport),
 		libp2p.Transport(libp2pwebtransport.New),
