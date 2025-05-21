@@ -31,11 +31,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	celestiaNet = Mainnet
-	userAgent   = "celestiant"
-)
-
 type RequestEvent struct {
 	Timestamp    time.Time
 	Self         peer.ID
@@ -64,7 +59,7 @@ type AntConfig struct {
 	PrivateKey     crypto.PrivKey
 	UserAgent      string
 	Port           int
-	ProtocolPrefix string
+	ProtocolID     string
 	BootstrapPeers []peer.AddrInfo
 	RequestsChan   chan<- RequestEvent
 	CertPath       string
@@ -79,7 +74,7 @@ func (cfg *AntConfig) Validate() error {
 		return fmt.Errorf("user agent is not set")
 	}
 
-	if cfg.ProtocolPrefix == "" {
+	if cfg.ProtocolID == "" {
 		return fmt.Errorf("protocol prefix is not set")
 	}
 
@@ -151,7 +146,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	}
 
 	opts := []libp2p.Option{
-		libp2p.UserAgent(userAgent),
+		libp2p.UserAgent(cfg.UserAgent),
 		libp2p.Identity(cfg.PrivateKey),
 		libp2p.Peerstore(ps),
 		libp2p.DisableRelay(),
@@ -180,7 +175,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	dhtOpts := []kad.Option{
 		kad.Mode(kad.ModeServer),
 		kad.BootstrapPeers(cfg.BootstrapPeers...),
-		kad.ProtocolPrefix(protocol.ID(cfg.ProtocolPrefix)),
+		kad.V1ProtocolOverride(protocol.ID(cfg.ProtocolID)),
 		kad.Datastore(ds),
 		kad.OnRequestHook(onRequestHook(h, cfg)),
 	}

@@ -39,8 +39,7 @@ var queenConfig = struct {
 	CacheSize          int
 	BucketSize         int
 	UserAgent          string
-	ProtocolPrefix     string
-	QueenID            string
+	Network            string
 }{
 	MetricsHost:        "127.0.0.1",
 	MetricsPort:        5999, // one below the FirstPort to not accidentally override it
@@ -60,8 +59,8 @@ var queenConfig = struct {
 	CrawlInterval:      120 * time.Minute,
 	CacheSize:          10_000,
 	BucketSize:         20,
-	UserAgent:          "celestiant",
-	QueenID:            "",
+	UserAgent:          ants.UserAgent(ants.CelestiaMainnet),
+	Network:            string(ants.CelestiaMainnet),
 }
 
 func main() {
@@ -77,6 +76,13 @@ func main() {
 				Name:  "queen",
 				Usage: "Starts the queen service",
 				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:        "network",
+						Usage:       "Which network to use",
+						EnvVars:     []string{"ANTS_NETWORK"},
+						Destination: &queenConfig.Network,
+						Value:       queenConfig.Network,
+					},
 					&cli.StringFlag{
 						Name:        "metrics.host",
 						Usage:       "On which host to expose the metrics",
@@ -210,14 +216,6 @@ func main() {
 						Destination: &queenConfig.UserAgent,
 						Value:       queenConfig.UserAgent,
 					},
-					&cli.StringFlag{
-						Name:        "queen.id",
-						Usage:       "The ID for the queen that's orchestrating the ants",
-						EnvVars:     []string{"ANTS_QUEEN_ID"},
-						Destination: &queenConfig.QueenID,
-						Value:       queenConfig.QueenID,
-						DefaultText: "generated",
-					},
 				},
 				Action: runQueenCommand,
 			},
@@ -302,6 +300,12 @@ func runQueenCommand(c *cli.Context) error {
 		return fmt.Errorf("ping clickhouse: %w", err)
 	}
 
+	if c.IsSet("user.agent") {
+		queenConfig.UserAgent = c.String("user.agent")
+	} else {
+		queenConfig.UserAgent = ants.UserAgent(ants.Network(queenConfig.Network))
+	}
+
 	queenCfg := &ants.QueenConfig{
 		KeysDBPath:         queenConfig.KeyDBPath,
 		CertsPath:          queenConfig.CertsPath,
@@ -315,6 +319,8 @@ func runQueenCommand(c *cli.Context) error {
 		NebulaDBConnString: queenConfig.NebulaDBConnString,
 		BucketSize:         queenConfig.BucketSize,
 		UserAgent:          queenConfig.UserAgent,
+		BootstrapPeers:     ants.BootstrapPeers(ants.Network(queenConfig.Network)),
+		ProtocolID:         ants.ProtocolID(ants.Network(queenConfig.Network)),
 		Telemetry:          telemetry,
 	}
 

@@ -42,6 +42,8 @@ type QueenConfig struct {
 	NebulaDBConnString string
 	BucketSize         int
 	UserAgent          string
+	BootstrapPeers     []peer.AddrInfo
+	ProtocolID         string
 	Telemetry          *metrics.Telemetry
 }
 
@@ -314,8 +316,8 @@ func (q *Queen) routine(ctx context.Context) {
 			PrivateKey:     key,
 			UserAgent:      q.cfg.UserAgent,
 			Port:           port,
-			ProtocolPrefix: fmt.Sprintf("/celestia/%s", celestiaNet), // TODO: parameterize
-			BootstrapPeers: BootstrapPeers(celestiaNet),              // TODO: parameterize
+			ProtocolID:     q.cfg.ProtocolID,
+			BootstrapPeers: q.cfg.BootstrapPeers,
 			RequestsChan:   q.antsEvents,
 			CertPath:       q.cfg.CertsPath,
 		}
