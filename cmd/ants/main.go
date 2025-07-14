@@ -40,6 +40,7 @@ var queenConfig = struct {
 	BucketSize         int
 	UserAgent          string
 	Network            string
+	ThrottleTimeout    time.Duration
 }{
 	MetricsHost:        "127.0.0.1",
 	MetricsPort:        5999, // one below the FirstPort to not accidentally override it
@@ -61,6 +62,7 @@ var queenConfig = struct {
 	BucketSize:         20,
 	UserAgent:          ants.UserAgent(ants.CelestiaMainnet),
 	Network:            string(ants.CelestiaMainnet),
+	ThrottleTimeout:    5 * time.Minute,
 }
 
 func main() {
@@ -216,6 +218,13 @@ func main() {
 						Destination: &queenConfig.UserAgent,
 						Value:       queenConfig.UserAgent,
 					},
+					&cli.DurationFlag{
+						Name:        "throttle.timeout",
+						Usage:       "Time to throttle requests from the same identified peer (0 to disable)",
+						EnvVars:     []string{"ANTS_THROTTLE_TIMEOUT"},
+						Destination: &queenConfig.ThrottleTimeout,
+						Value:       queenConfig.ThrottleTimeout,
+					},
 				},
 				Action: runQueenCommand,
 			},
@@ -319,6 +328,7 @@ func runQueenCommand(c *cli.Context) error {
 		NebulaDBConnString: queenConfig.NebulaDBConnString,
 		BucketSize:         queenConfig.BucketSize,
 		UserAgent:          queenConfig.UserAgent,
+		ThrottleTimeout:    queenConfig.ThrottleTimeout,
 		BootstrapPeers:     ants.BootstrapPeers(ants.Network(queenConfig.Network)),
 		ProtocolID:         ants.ProtocolID(ants.Network(queenConfig.Network)),
 		Telemetry:          telemetry,

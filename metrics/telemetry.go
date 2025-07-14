@@ -37,7 +37,7 @@ type Telemetry struct {
 	BulkInsertCounter       metric.Int64Counter
 	BulkInsertSizeHist      metric.Int64Histogram
 	BulkInsertLatencyMsHist metric.Int64Histogram
-	CacheHitCounter         metric.Int64Counter
+	DroppedRequestsCounter  metric.Int64Counter
 }
 
 func NewTelemetry(tp trace.TracerProvider, mp metric.MeterProvider) (*Telemetry, error) {
@@ -68,20 +68,22 @@ func NewTelemetry(tp trace.TracerProvider, mp metric.MeterProvider) (*Telemetry,
 		return nil, fmt.Errorf("bulk_insert_latency histogram: %w", err)
 	}
 
-	cacheHitCounter, err := meter.Int64Counter("cache_hit_count", metric.WithDescription("Number of cache hits"))
+	droppedRequestsCounter, err := meter.Int64Counter("dropped_requests", metric.WithDescription("Number of requests dropped because of being duplicates"))
 	if err != nil {
-		return nil, fmt.Errorf("cache_hit_counter gauge: %w", err)
+		return nil, fmt.Errorf("dropped_requests gauge: %w", err)
 	}
 
-	return &Telemetry{
+	t := &Telemetry{
 		Tracer:                  tp.Tracer(TracerName),
 		TrackedRequestsCounter:  trackedRequestsCounter,
 		BulkInsertCounter:       bulkInsertCounter,
 		BulkInsertSizeHist:      bulkInsertSizeHist,
 		BulkInsertLatencyMsHist: bulkInsertLatencyMsHist,
-		CacheHitCounter:         cacheHitCounter,
+		DroppedRequestsCounter:  droppedRequestsCounter,
 		AntsCountGauge:          antsCountGauge,
-	}, nil
+	}
+
+	return t, nil
 }
 
 // HealthStatus is a global variable that indicates the health of the current

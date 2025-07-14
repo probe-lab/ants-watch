@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	lru "github.com/hashicorp/golang-lru/v2"
 	ds "github.com/ipfs/go-datastore"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-log/v2"
@@ -15,16 +16,14 @@ import (
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
-
-	"github.com/probe-lab/ants-watch/db"
-	"github.com/probe-lab/ants-watch/metrics"
 	"github.com/probe-lab/go-libdht/kad"
 	"github.com/probe-lab/go-libdht/kad/key"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 	"github.com/probe-lab/go-libdht/kad/trie"
+
+	"github.com/probe-lab/ants-watch/db"
+	"github.com/probe-lab/ants-watch/metrics"
 )
 
 var logger = log.Logger("ants-queen")
@@ -44,6 +43,7 @@ type QueenConfig struct {
 	UserAgent          string
 	BootstrapPeers     []peer.AddrInfo
 	ProtocolID         string
+	ThrottleTimeout    time.Duration
 	Telemetry          *metrics.Telemetry
 }
 
@@ -59,6 +59,8 @@ type Queen struct {
 
 	ants       []*Ant
 	antsEvents chan RequestEvent
+
+	peerSeen *lru.Cache[peer.ID, time.Time]
 
 	// portsOccupancy is a slice of bools that represent the occupancy of the ports
 	// false corresponds to an available port, true to an occupied port
@@ -79,6 +81,11 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 		return nil, fmt.Errorf("creating in-memory leveldb: %w", err)
 	}
 
+	cache, err := lru.New[peer.ID, time.Time](2048)
+	if err != nil {
+		return nil, fmt.Errorf("creating lru cache: %w", err)
+	}
+
 	queen := &Queen{
 		cfg:              cfg,
 		id:               uuid.NewString(),
@@ -88,6 +95,7 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 		datastore:        ldb,
 		ants:             []*Ant{},
 		antsEvents:       make(chan RequestEvent, 1024),
+		peerSeen:         cache,
 		clickhouseClient: clickhouseClient,
 		portsOccupancy:   make([]bool, cfg.NPorts),
 	}
@@ -166,14 +174,23 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 			return
 
 		case evt := <-q.antsEvents:
+			if q.cfg.ThrottleTimeout > 0 {
+				lastSeen, found := q.peerSeen.Peek(evt.Remote)
+				if found && time.Since(lastSeen) < q.cfg.ThrottleTimeout {
+					q.cfg.Telemetry.DroppedRequestsCounter.Add(ctx, 1)
+					continue
+				} else if evt.IsIdentified() {
+					q.peerSeen.Add(evt.Remote, time.Now())
+				}
+			}
 
-			request, err := q.handleRequestEvent(ctx, evt, requests)
+			dbReq, err := q.toDatabaseRequest(evt)
 			if err != nil {
 				logger.Warn("Error handling request event: ", err)
 				continue
 			}
 
-			requests = append(requests, request)
+			requests = append(requests, dbReq)
 			if len(requests) >= q.cfg.BatchSize {
 				if err := q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
 					logger.Errorf("Error inserting requests: %v", err)
@@ -194,11 +211,7 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 	}
 }
 
-func (q *Queen) handleRequestEvent(ctx context.Context, evt RequestEvent, requests []*db.Request) (*db.Request, error) {
-	q.cfg.Telemetry.TrackedRequestsCounter.Add(ctx, 1, metric.WithAttributes(
-		attribute.String("type", evt.Type.String()),
-	))
-
+func (q *Queen) toDatabaseRequest(evt RequestEvent) (*db.Request, error) {
 	protocolStrs := protocol.ConvertToStrings(evt.Protocols)
 	sort.Strings(protocolStrs)
 
@@ -210,7 +223,7 @@ func (q *Queen) handleRequestEvent(ctx context.Context, evt RequestEvent, reques
 		return nil, fmt.Errorf("creating uuid: %w", err)
 	}
 
-	return &db.Request{
+	dbReq := &db.Request{
 		UUID:           uuidv7,
 		QueenID:        q.id,
 		AntID:          evt.Self,
@@ -222,7 +235,9 @@ func (q *Queen) handleRequestEvent(ctx context.Context, evt RequestEvent, reques
 		KeyID:          evt.Target.B58String(),
 		MultiAddresses: maddrStrs,
 		ConnMaddr:      evt.ConnMaddr.String(),
-	}, nil
+	}
+
+	return dbReq, nil
 }
 
 func (q *Queen) persistLiveAntsKeys() {
