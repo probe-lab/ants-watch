@@ -44,7 +44,7 @@ type RequestEvent struct {
 }
 
 func (r *RequestEvent) IsIdentified() bool {
-	return r.AgentVersion != "" && len(r.Protocols) > 0 && len(r.Maddrs) > 0
+	return r.AgentVersion != "" && len(r.Protocols) > 0
 }
 
 func (r *RequestEvent) MaddrStrings() []string {
