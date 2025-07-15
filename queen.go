@@ -21,6 +21,8 @@ import (
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
 	"github.com/probe-lab/go-libdht/kad/key/bitstr"
 	"github.com/probe-lab/go-libdht/kad/trie"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/ants-watch/metrics"
@@ -183,6 +185,10 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 					q.peerSeen.Add(evt.Remote, time.Now())
 				}
 			}
+
+			q.cfg.Telemetry.TrackedRequestsCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("type", evt.Type.String()),
+			))
 
 			dbReq, err := q.toDatabaseRequest(evt)
 			if err != nil {
