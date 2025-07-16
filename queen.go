@@ -174,7 +174,6 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 				}
 			}
 			return
-
 		case evt := <-q.antsEvents:
 			if q.cfg.ThrottleTimeout > 0 {
 				lastSeen, found := q.peerSeen.Peek(evt.Remote)
@@ -341,6 +340,7 @@ func (q *Queen) routine(ctx context.Context) {
 			BootstrapPeers: q.cfg.BootstrapPeers,
 			RequestsChan:   q.antsEvents,
 			CertPath:       q.cfg.CertsPath,
+			Telemetry:      q.cfg.Telemetry,
 		}
 
 		ant, err := SpawnAnt(ctx, q.peerstore, q.datastore, antCfg)

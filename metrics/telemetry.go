@@ -38,6 +38,8 @@ type Telemetry struct {
 	BulkInsertSizeHist      metric.Int64Histogram
 	BulkInsertLatencyMsHist metric.Int64Histogram
 	DroppedRequestsCounter  metric.Int64Counter
+	ConnectCounter          metric.Int64Counter
+	DisconnectCounter       metric.Int64Counter
 }
 
 func NewTelemetry(tp trace.TracerProvider, mp metric.MeterProvider) (*Telemetry, error) {
@@ -73,6 +75,16 @@ func NewTelemetry(tp trace.TracerProvider, mp metric.MeterProvider) (*Telemetry,
 		return nil, fmt.Errorf("dropped_requests gauge: %w", err)
 	}
 
+	connectCounter, err := meter.Int64Counter("connect", metric.WithDescription("Number of opened connections"))
+	if err != nil {
+		return nil, fmt.Errorf("connect gauge: %w", err)
+	}
+
+	disconnectCounter, err := meter.Int64Counter("disconnect", metric.WithDescription("Number of closed connections"))
+	if err != nil {
+		return nil, fmt.Errorf("disconnect gauge: %w", err)
+	}
+
 	t := &Telemetry{
 		Tracer:                  tp.Tracer(TracerName),
 		TrackedRequestsCounter:  trackedRequestsCounter,
@@ -81,6 +93,8 @@ func NewTelemetry(tp trace.TracerProvider, mp metric.MeterProvider) (*Telemetry,
 		BulkInsertLatencyMsHist: bulkInsertLatencyMsHist,
 		DroppedRequestsCounter:  droppedRequestsCounter,
 		AntsCountGauge:          antsCountGauge,
+		ConnectCounter:          connectCounter,
+		DisconnectCounter:       disconnectCounter,
 	}
 
 	return t, nil

@@ -28,7 +28,11 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	mh "github.com/multiformats/go-multihash"
 	"github.com/probe-lab/go-libdht/kad/key/bit256"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
+
+	"github.com/probe-lab/ants-watch/metrics"
 )
 
 type RequestEvent struct {
@@ -63,6 +67,7 @@ type AntConfig struct {
 	BootstrapPeers []peer.AddrInfo
 	RequestsChan   chan<- RequestEvent
 	CertPath       string
+	Telemetry      *metrics.Telemetry
 }
 
 func (cfg *AntConfig) Validate() error {
@@ -171,6 +176,19 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	if err != nil {
 		return nil, fmt.Errorf("new libp2p host: %w", err)
 	}
+
+	h.Network().Notify(&network.NotifyBundle{
+		ConnectedF: func(n network.Network, conn network.Conn) {
+			cfg.Telemetry.ConnectCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("direction", conn.Stat().Direction.String()),
+			))
+		},
+		DisconnectedF: func(n network.Network, conn network.Conn) {
+			cfg.Telemetry.DisconnectCounter.Add(ctx, 1, metric.WithAttributes(
+				attribute.String("direction", conn.Stat().Direction.String()),
+			))
+		},
+	})
 
 	dhtOpts := []kad.Option{
 		kad.Mode(kad.ModeServer),
