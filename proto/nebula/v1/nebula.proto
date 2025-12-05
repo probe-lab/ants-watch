@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package nebula.v1;
+
+import "google/protobuf/timestamp.proto";
+
+message MultiAddress {
+  string multi_address = 1;
+  optional int32 asn = 2;
+  optional int32 is_cloud = 3;
+  optional string country = 4;
+  optional string continent = 5;
+  optional string ip = 6;
+}
+
+message GetPeerRequest {
+  string project = 1;
+  string network = 2;
+  string multi_hash = 3;
+}
+
+message GetPeerResponse {
+  string multi_hash = 1;
+  optional string agent_version = 2;
+  repeated string protocols = 3;
+  repeated MultiAddress multi_addresses = 4;
+  repeated AgentUpdate agent_updates = 5;
+  google.protobuf.Timestamp first_seen = 7;
+}
+
+message AgentUpdate {
+  string agent_version = 1;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message GetRegisteredProjectsRequest {}
+
+message GetRegisteredProjectsResponse {
+  repeated string projects = 1;
+}
+
+message GetRegisteredNetworksRequest {
+  string project = 1;
+}
+
+message GetRegisteredNetworksResponse {
+  repeated string networks = 1;
+}
+
+message GetLatestPeerIDsRequest {
+  string project = 1;
+  string network = 2;
+}
+
+message GetLatestPeerIDsResponse {
+  repeated string peer_ids = 1;
+}
+
+service NebulaService {
+  rpc GetRegisteredProjects(GetRegisteredProjectsRequest) returns (GetRegisteredProjectsResponse) {}
+  rpc GetRegisteredNetworks(GetRegisteredNetworksRequest) returns (GetRegisteredNetworksResponse) {}
+  rpc GetPeer(GetPeerRequest) returns (GetPeerResponse) {}
+  rpc GetLatestPeerIDs(GetLatestPeerIDsRequest) returns (GetLatestPeerIDsResponse) {}
+}

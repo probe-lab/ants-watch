@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,10 +12,13 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel/trace/noop"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/probe-lab/ants-watch"
 	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/ants-watch/metrics"
+	nebulav1 "github.com/probe-lab/ants-watch/proto/nebula/v1"
 )
 
 var logger = logging.Logger("ants-queen")
@@ -27,7 +31,8 @@ var queenConfig = struct {
 	ClickhouseUsername string
 	ClickhousePassword string
 	ClickhouseSSL      bool
-	NebulaDBConnString string
+	NebulaSvcHost      string
+	NebulaSvcPort      int
 	KeyDBPath          string
 	CertsPath          string
 	NumPorts           int
@@ -49,7 +54,8 @@ var queenConfig = struct {
 	ClickhouseUsername: "",
 	ClickhousePassword: "",
 	ClickhouseSSL:      true,
-	NebulaDBConnString: "",
+	NebulaSvcHost:      "localhost",
+	NebulaSvcPort:      8383,
 	KeyDBPath:          "keys.db",
 	CertsPath:          "p2p-forge-certs",
 	NumPorts:           128,
@@ -135,11 +141,18 @@ func main() {
 						Value:       queenConfig.ClickhouseSSL,
 					},
 					&cli.StringFlag{
-						Name:        "nebula.connstring",
-						Usage:       "The connection string for the Postgres Nebula database",
-						EnvVars:     []string{"ANTS_NEBULA_CONNSTRING"},
-						Destination: &queenConfig.NebulaDBConnString,
-						Value:       queenConfig.NebulaDBConnString,
+						Name:        "nebula.svc.host",
+						Usage:       "The host where to reach the nebula service",
+						EnvVars:     []string{"ANTS_NEBULA_SERVICE_HOST"},
+						Destination: &queenConfig.NebulaSvcHost,
+						Value:       queenConfig.NebulaSvcHost,
+					},
+					&cli.IntFlag{
+						Name:        "nebula.svc.port",
+						Usage:       "The port where to reach the nebula service",
+						EnvVars:     []string{"ANTS_NEBULA_SERVICE_PORT"},
+						Destination: &queenConfig.NebulaSvcPort,
+						Value:       queenConfig.NebulaSvcPort,
 					},
 					&cli.IntFlag{
 						Name:        "batch.size",
@@ -315,27 +328,46 @@ func runQueenCommand(c *cli.Context) error {
 		queenConfig.UserAgent = ants.UserAgent(ants.Network(queenConfig.Network))
 	}
 
+	options := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+
+	// initializing nebula service connection
+	nebulaSvcAddr := net.JoinHostPort(queenConfig.NebulaSvcHost, fmt.Sprint(queenConfig.NebulaSvcPort))
+	nebulaConn, err := grpc.NewClient(nebulaSvcAddr, options...)
+	if err != nil {
+		return fmt.Errorf("new gRPC Nebula connection client %s: %v", nebulaSvcAddr, err)
+	}
+
+	nebulaClient := nebulav1.NewNebulaServiceClient(nebulaConn)
+
+	logger.Info("Initialized Nebula service client", "addr", nebulaSvcAddr)
+	defer func() {
+		if err := nebulaConn.Close(); err != nil {
+			logger.Errorf("failed to close gRPC Nebula client: %s", err)
+		}
+	}()
+
 	queenCfg := &ants.QueenConfig{
-		KeysDBPath:         queenConfig.KeyDBPath,
-		CertsPath:          queenConfig.CertsPath,
-		NPorts:             queenConfig.NumPorts,
-		FirstPort:          queenConfig.FirstPort,
-		UPnP:               queenConfig.UPnp,
-		BatchSize:          queenConfig.BatchSize,
-		BatchTime:          queenConfig.BatchTime,
-		CrawlInterval:      queenConfig.CrawlInterval,
-		CacheSize:          queenConfig.CacheSize,
-		NebulaDBConnString: queenConfig.NebulaDBConnString,
-		BucketSize:         queenConfig.BucketSize,
-		UserAgent:          queenConfig.UserAgent,
-		ThrottleTimeout:    queenConfig.ThrottleTimeout,
-		BootstrapPeers:     ants.BootstrapPeers(ants.Network(queenConfig.Network)),
-		ProtocolID:         ants.ProtocolID(ants.Network(queenConfig.Network)),
-		Telemetry:          telemetry,
+		KeysDBPath:      queenConfig.KeyDBPath,
+		CertsPath:       queenConfig.CertsPath,
+		NPorts:          queenConfig.NumPorts,
+		FirstPort:       queenConfig.FirstPort,
+		UPnP:            queenConfig.UPnp,
+		BatchSize:       queenConfig.BatchSize,
+		BatchTime:       queenConfig.BatchTime,
+		CrawlInterval:   queenConfig.CrawlInterval,
+		CacheSize:       queenConfig.CacheSize,
+		BucketSize:      queenConfig.BucketSize,
+		UserAgent:       queenConfig.UserAgent,
+		ThrottleTimeout: queenConfig.ThrottleTimeout,
+		BootstrapPeers:  ants.BootstrapPeers(ants.Network(queenConfig.Network)),
+		ProtocolID:      ants.ProtocolID(ants.Network(queenConfig.Network)),
+		Telemetry:       telemetry,
 	}
 
 	// initializing queen
-	queen, err := ants.NewQueen(client, queenCfg)
+	queen, err := ants.NewQueen(client, nebulaClient, queenCfg)
 	if err != nil {
 		return fmt.Errorf("create queen: %w", err)
 	}

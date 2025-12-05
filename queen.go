@@ -26,35 +26,35 @@ import (
 
 	"github.com/probe-lab/ants-watch/db"
 	"github.com/probe-lab/ants-watch/metrics"
+	nebulav1 "github.com/probe-lab/ants-watch/proto/nebula/v1"
 )
 
 var logger = log.Logger("ants-queen")
 
 type QueenConfig struct {
-	KeysDBPath         string
-	CertsPath          string
-	NPorts             int
-	FirstPort          int
-	UPnP               bool
-	BatchSize          int
-	BatchTime          time.Duration
-	CrawlInterval      time.Duration
-	CacheSize          int
-	NebulaDBConnString string
-	BucketSize         int
-	UserAgent          string
-	BootstrapPeers     []peer.AddrInfo
-	ProtocolID         string
-	ThrottleTimeout    time.Duration
-	Telemetry          *metrics.Telemetry
+	KeysDBPath      string
+	CertsPath       string
+	NPorts          int
+	FirstPort       int
+	UPnP            bool
+	BatchSize       int
+	BatchTime       time.Duration
+	CrawlInterval   time.Duration
+	CacheSize       int
+	BucketSize      int
+	UserAgent       string
+	BootstrapPeers  []peer.AddrInfo
+	ProtocolID      string
+	ThrottleTimeout time.Duration
+	Telemetry       *metrics.Telemetry
 }
 
 type Queen struct {
 	cfg *QueenConfig
 
-	id       string
-	nebulaDB *NebulaDB
-	keysDB   *KeysDB
+	id           string
+	nebulaClient nebulav1.NebulaServiceClient
+	keysDB       *KeysDB
 
 	peerstore peerstore.Peerstore
 	datastore ds.Batching
@@ -72,7 +72,7 @@ type Queen struct {
 	clickhouseClient db.Client
 }
 
-func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
+func NewQueen(clickhouseClient db.Client, nebulaClient nebulav1.NebulaServiceClient, cfg *QueenConfig) (*Queen, error) {
 	ps, err := pstoremem.NewPeerstore()
 	if err != nil {
 		return nil, fmt.Errorf("creating peerstore: %w", err)
@@ -91,7 +91,7 @@ func NewQueen(clickhouseClient db.Client, cfg *QueenConfig) (*Queen, error) {
 	queen := &Queen{
 		cfg:              cfg,
 		id:               uuid.NewString(),
-		nebulaDB:         NewNebulaDB(cfg.NebulaDBConnString, cfg.UserAgent, cfg.CrawlInterval),
+		nebulaClient:     nebulaClient,
 		keysDB:           NewKeysDB(cfg.KeysDBPath),
 		peerstore:        ps,
 		datastore:        ldb,
@@ -131,10 +131,6 @@ func (q *Queen) freePort(port int) {
 func (q *Queen) Run(ctx context.Context) error {
 	logger.Infoln("Queen.Run started")
 	defer logger.Infoln("Queen.Run completing")
-
-	if err := q.nebulaDB.Open(ctx); err != nil {
-		return fmt.Errorf("opening nebula db: %w", err)
-	}
 
 	go q.consumeAntsEvents(ctx)
 
@@ -258,8 +254,14 @@ func (q *Queen) persistLiveAntsKeys() {
 // routine must be called periodically to ensure that the number and positions
 // of ants is still relevant given the latest observed DHT servers.
 func (q *Queen) routine(ctx context.Context) {
+	// hard-coded for now
+	request := &nebulav1.GetLatestPeerIDsRequest{
+		Project: "celestia",
+		Network: "mainnet",
+	}
+
 	// get online DHT servers from the Nebula database
-	networkPeers, err := q.nebulaDB.GetLatestPeerIds(ctx)
+	response, err := q.nebulaClient.GetLatestPeerIDs(ctx, request)
 	if err != nil {
 		logger.Warn("unable to get latest peer ids from Nebula ", err)
 		return
@@ -267,8 +269,13 @@ func (q *Queen) routine(ctx context.Context) {
 
 	// build a binary trie from the network peers
 	networkTrie := trie.New[bit256.Key, peer.ID]()
-	for _, peerId := range networkPeers {
-		networkTrie.Add(PeerIDToKadID(peerId), peerId)
+	for _, peerId := range response.PeerIds {
+		pid, err := peer.Decode(peerId)
+		if err != nil {
+			logger.Warn("unable to decode peer id: ", err)
+			continue
+		}
+		networkTrie.Add(PeerIDToKadID(pid), pid)
 	}
 
 	// zones correspond to the prefixes of the tries that must be covered by an
