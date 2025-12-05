@@ -19,7 +19,7 @@ env:
   AWS_ROLE: arn:aws:iam::019120760881:role/prod-use1-github-oidc-role
   AWS_ECS_TASK_DEFINITION: prod-use1-cmi-ants-celestia-watch-task
   AWS_ECS_SERVICE: prod-use1-cmi-ants-celestia-watch
-  AWS_ECS_CLUSTER_NAME: default
+  AWS_ECS_CLUSTER_NAME: prod-use1-cmi-ecs-cluster
   AWS_ECR_REPOSITORY: probelab
 
 jobs:
