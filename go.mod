@@ -6,9 +6,7 @@ replace (
 	github.com/libp2p/go-libp2p-kad-dht => github.com/probe-lab/go-libp2p-kad-dht v0.0.0-20250110203508-4e3746b88990
 )
 
-go 1.23.1
-
-toolchain go1.23.2
+go 1.24.0
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.0
@@ -26,6 +24,8 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.31.0
 	go.uber.org/atomic v1.11.0
 )
+
+require golang.org/x/telemetry v0.0.0-20251008203120-078029d740a8 // indirect
 
 require (
 	github.com/ClickHouse/ch-go v0.63.1 // indirect
@@ -162,15 +162,15 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0
 	go.uber.org/zap/exp v0.3.0 // indirect
-	golang.org/x/crypto v0.32.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
-	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/net v0.34.0
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/mod v0.29.0 // indirect
+	golang.org/x/net v0.47.0
+	golang.org/x/sync v0.18.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.8.0 // indirect
-	golang.org/x/tools v0.29.0 // indirect
+	golang.org/x/tools v0.38.0 // indirect
 	gonum.org/v1/gonum v0.15.1 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241104194629-dd2ea8efbc28 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250106144421-5f5ef82da422 // indirect
