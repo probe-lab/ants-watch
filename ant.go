@@ -27,7 +27,7 @@ import (
 	libp2pwebtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
 	"github.com/multiformats/go-multiaddr"
 	mh "github.com/multiformats/go-multihash"
-	"github.com/probe-lab/go-libdht/kad/key/bit256"
+	"github.com/ipfs/go-libdht/kad/key/bit256"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
