@@ -36,7 +36,7 @@ func (db *KeysDB) readKeysFromFile() *trie.Trie[bit256.Key, crypto.PrivKey] {
 		logger.Warn("Couldn't open file", db.filepath, ":", err)
 		return keysTrie
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	for {
 		// Read exactly ed25519.PrivateKeySize bytes into keyBytes
@@ -75,7 +75,7 @@ func (db *KeysDB) writeKeysToFile(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey
 		logger.Warn("Couldn't open file", db.filepath, ":", err)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	allKeys := trie.Closest(keysTrie, bit256.ZeroKey(), keysTrie.Size())
 	for _, entry := range allKeys {

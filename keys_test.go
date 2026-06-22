@@ -5,12 +5,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/ipfs/go-libdht/kad/key"
 	"github.com/ipfs/go-libdht/kad/key/bit256"
 	"github.com/ipfs/go-libdht/kad/key/bitstr"
 	"github.com/ipfs/go-libdht/kad/trie"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +40,7 @@ func TestWriteReadKeys(t *testing.T) {
 		require.Equal(t, k.Data, privKey)
 	}
 
-	os.Remove(filename)
+	_ = os.Remove(filename)
 }
 
 func genPrefixesForDepth(depth int) []bitstr.Key {
@@ -63,7 +63,7 @@ func TestKeysDB(t *testing.T) {
 	filename := "test_keys.db"
 	prefixDepth := 4 // 2**(prefixDepth) prefixes
 
-	defer os.Remove(filename)
+	defer func() { _ = os.Remove(filename) }()
 
 	prefixes := genPrefixesForDepth(prefixDepth)
 
@@ -91,7 +91,7 @@ func TestKeysDB(t *testing.T) {
 func TestReturnKeysToEmptyTrie(t *testing.T) {
 	filename := "test_keys.db"
 	db := NewKeysDB(filename)
-	defer os.Remove(filename)
+	defer func() { _ = os.Remove(filename) }()
 
 	key := genKey()
 	privKeys := db.MatchingKeys(nil, []crypto.PrivKey{key})

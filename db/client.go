@@ -88,7 +88,7 @@ func (c *ClickhouseClient) BulkInsertRequests(ctx context.Context, requests []*R
 		c.telemetry.BulkInsertSizeHist.Record(ctx, int64(len(requests)))
 		c.telemetry.BulkInsertLatencyMsHist.Record(ctx, time.Since(start).Milliseconds())
 	}()
-	batch, err := c.Conn.PrepareBatch(ctx, "INSERT INTO requests", driver.WithReleaseConnection())
+	batch, err := c.PrepareBatch(ctx, "INSERT INTO requests", driver.WithReleaseConnection())
 	if err != nil {
 		return fmt.Errorf("prepare batch: %w", err)
 	}

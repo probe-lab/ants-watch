@@ -1,6 +1,6 @@
 module github.com/probe-lab/ants-watch
 
-go 1.26.2
+go 1.25.7
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
