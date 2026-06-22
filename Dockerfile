@@ -1,6 +1,6 @@
 ARG RAW_VERSION=v0.1.0
 
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 ARG RAW_VERSION
 

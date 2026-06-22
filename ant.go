@@ -7,6 +7,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	ds "github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-libdht/kad/key/bit256"
 	p2pforge "github.com/ipshipyard/p2p-forge/client"
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
@@ -27,7 +28,6 @@ import (
 	libp2pwebtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
 	"github.com/multiformats/go-multiaddr"
 	mh "github.com/multiformats/go-multihash"
-	"github.com/ipfs/go-libdht/kad/key/bit256"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
@@ -270,8 +270,8 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	return ant, nil
 }
 
-func onRequestHook(h host.Host, cfg *AntConfig) func(ctx context.Context, s network.Stream, req pb.Message) {
-	return func(ctx context.Context, s network.Stream, req pb.Message) {
+func onRequestHook(h host.Host, cfg *AntConfig) func(ctx context.Context, s network.Stream, req *pb.Message) {
+	return func(ctx context.Context, s network.Stream, req *pb.Message) {
 		remotePeer := s.Conn().RemotePeer()
 
 		agentVersion := ""
