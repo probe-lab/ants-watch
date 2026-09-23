@@ -17,6 +17,8 @@ const (
 	CelestiaMocha Network = "celestia-mocha-4"
 	// AvailMainnetLC corresponds to the light client mainnet from avail
 	AvailMainnetLC Network = "avail-mnlc"
+	// Agntcy corresponds to the AGNTCY DIR DHT testbed. See: agntcy/dir.
+	Agntcy Network = "agntcy"
 )
 
 // NOTE: Every time we add a new long-running network, its bootstrap peers have to be added here.
@@ -47,6 +49,9 @@ var bootstrapList = map[Network][]string{
 	AvailMainnetLC: {
 		"/dns/bootnode.1.lightclient.mainnet.avail.so/tcp/37000/p2p/12D3KooW9x9qnoXhkHAjdNFu92kMvBRSiFBMAoC5NnifgzXjsuiM",
 	},
+	Agntcy: {
+		"/dns4/routing.ads.outshift.io/tcp/5555/p2p/12D3KooWLf9p3cedc86xGQBaqak6rAFmQk1HxKAK1yh7umHE3amu",
+	},
 }
 
 func BootstrapPeers(net Network) []peer.AddrInfo {
@@ -69,6 +74,8 @@ func UserAgent(net Network) string {
 		// Spoof agent version because of this check:
 		// https://github.com/availproject/avail-light/blob/2bd85abd4eb502c818e3cd634bd235fea477571f/core/src/network/p2p/event_loop.rs#L441
 		return "avail-light-client/light-client/1.12.13/go-ant"
+	case Agntcy:
+		return "probelab-node/agntcy/ant/v0.1.0"
 	default:
 		panic(fmt.Sprint("unexpected network", net))
 	}
@@ -84,6 +91,9 @@ func ProtocolID(net Network) string {
 		return "/celestia/mocha-4/kad/1.0.0"
 	case AvailMainnetLC:
 		return "/avail_kad/id/1.0.0-b91746"
+	case Agntcy:
+		// no leading slash: agntcy's ProtocolPrefix is "dir"
+		return "dir/kad/1.0.0"
 	default:
 		panic(fmt.Sprint("unexpected network", net))
 	}
