@@ -3,6 +3,7 @@ package ants
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -10,17 +11,16 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	ds "github.com/ipfs/go-datastore"
 	leveldb "github.com/ipfs/go-ds-leveldb"
-	"github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/peerstore"
-	"github.com/libp2p/go-libp2p/core/protocol"
-	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	"github.com/ipfs/go-libdht/kad"
 	"github.com/ipfs/go-libdht/kad/key"
 	"github.com/ipfs/go-libdht/kad/key/bit256"
 	"github.com/ipfs/go-libdht/kad/key/bitstr"
 	"github.com/ipfs/go-libdht/kad/trie"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
@@ -29,16 +29,12 @@ import (
 	nebulav1 "github.com/probe-lab/ants-watch/proto/nebula/v1"
 )
 
-var logger = log.Logger("ants-queen")
-
 type QueenConfig struct {
 	KeysDBPath      string
 	CertsPath       string
 	NPorts          int
 	FirstPort       int
 	UPnP            bool
-	BatchSize       int
-	BatchTime       time.Duration
 	CrawlInterval   time.Duration
 	CacheSize       int
 	BucketSize      int
@@ -69,10 +65,10 @@ type Queen struct {
 	// the first item of the slice corresponds to the firstPort
 	portsOccupancy []bool
 
-	clickhouseClient db.Client
+	requestWriter db.RequestWriter
 }
 
-func NewQueen(clickhouseClient db.Client, nebulaClient nebulav1.NebulaServiceClient, cfg *QueenConfig) (*Queen, error) {
+func NewQueen(requestWriter db.RequestWriter, nebulaClient nebulav1.NebulaServiceClient, cfg *QueenConfig) (*Queen, error) {
 	ps, err := pstoremem.NewPeerstore()
 	if err != nil {
 		return nil, fmt.Errorf("creating peerstore: %w", err)
@@ -89,17 +85,17 @@ func NewQueen(clickhouseClient db.Client, nebulaClient nebulav1.NebulaServiceCli
 	}
 
 	queen := &Queen{
-		cfg:              cfg,
-		id:               uuid.NewString(),
-		nebulaClient:     nebulaClient,
-		keysDB:           NewKeysDB(cfg.KeysDBPath),
-		peerstore:        ps,
-		datastore:        ldb,
-		ants:             []*Ant{},
-		antsEvents:       make(chan RequestEvent, 1024),
-		peerSeen:         cache,
-		clickhouseClient: clickhouseClient,
-		portsOccupancy:   make([]bool, cfg.NPorts),
+		cfg:            cfg,
+		id:             uuid.NewString(),
+		nebulaClient:   nebulaClient,
+		keysDB:         NewKeysDB(cfg.KeysDBPath),
+		peerstore:      ps,
+		datastore:      ldb,
+		ants:           []*Ant{},
+		antsEvents:     make(chan RequestEvent, 1024),
+		peerSeen:       cache,
+		requestWriter:  requestWriter,
+		portsOccupancy: make([]bool, cfg.NPorts),
 	}
 
 	return queen, nil
@@ -129,8 +125,8 @@ func (q *Queen) freePort(port int) {
 
 // Run makes the queen orchestrate the ant nest
 func (q *Queen) Run(ctx context.Context) error {
-	logger.Infoln("Queen.Run started")
-	defer logger.Infoln("Queen.Run completing")
+	slog.Info("Queen.Run started")
+	defer slog.Info("Queen.Run completing")
 
 	go q.consumeAntsEvents(ctx)
 
@@ -142,7 +138,7 @@ func (q *Queen) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Debugln("Queen.Run done..")
+			slog.Debug("Queen.Run done..")
 			q.persistLiveAntsKeys()
 			return ctx.Err()
 		case <-crawlTime.C:
@@ -152,23 +148,17 @@ func (q *Queen) Run(ctx context.Context) error {
 }
 
 func (q *Queen) consumeAntsEvents(ctx context.Context) {
-	requests := make([]*db.Request, 0, q.cfg.BatchSize)
-
-	// bulk insert for every batch size or N seconds, whichever comes first
-	ticker := time.NewTicker(q.cfg.BatchTime)
-	defer ticker.Stop()
+	q.requestWriter.Start(ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Debugln("Gracefully shutting down ants...")
-			logger.Debugln("Number of requests remaining to be inserted:", len(requests))
-
-			if len(requests) > 0 {
-				if err := q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
-					logger.Errorf("Error inserting requests: %v", err)
-				}
+			slog.Debug("Gracefully shutting down ants, draining buffered requests")
+			stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := q.requestWriter.Stop(stopCtx); err != nil {
+				slog.Error("draining requests on shutdown", "err", err)
 			}
+			cancel()
 			return
 		case evt := <-q.antsEvents:
 			if q.cfg.ThrottleTimeout > 0 {
@@ -187,32 +177,18 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 
 			dbReq, err := q.toDatabaseRequest(evt)
 			if err != nil {
-				logger.Warn("Error handling request event: ", err)
+				slog.Warn("handling request event", "err", err)
 				continue
 			}
 
-			requests = append(requests, dbReq)
-			if len(requests) >= q.cfg.BatchSize {
-				if err := q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
-					logger.Errorf("Error inserting requests: %v", err)
-				}
-				requests = requests[:0]
+			if err := q.requestWriter.Submit(ctx, dbReq); err != nil {
+				slog.Error("submitting request", "err", err)
 			}
-
-		case <-ticker.C:
-			if len(requests) == 0 {
-				continue
-			}
-
-			if err := q.clickhouseClient.BulkInsertRequests(ctx, requests); err != nil {
-				logger.Errorf("Error inserting requests: %v", err)
-			}
-			requests = requests[:0]
 		}
 	}
 }
 
-func (q *Queen) toDatabaseRequest(evt RequestEvent) (*db.Request, error) {
+func (q *Queen) toDatabaseRequest(evt RequestEvent) (db.Request, error) {
 	protocolStrs := protocol.ConvertToStrings(evt.Protocols)
 	sort.Strings(protocolStrs)
 
@@ -221,10 +197,10 @@ func (q *Queen) toDatabaseRequest(evt RequestEvent) (*db.Request, error) {
 
 	uuidv7, err := uuid.NewV7()
 	if err != nil {
-		return nil, fmt.Errorf("creating uuid: %w", err)
+		return db.Request{}, fmt.Errorf("creating uuid: %w", err)
 	}
 
-	dbReq := &db.Request{
+	dbReq := db.Request{
 		UUID:           uuidv7,
 		QueenID:        q.id,
 		AntID:          evt.Self,
@@ -242,13 +218,13 @@ func (q *Queen) toDatabaseRequest(evt RequestEvent) (*db.Request, error) {
 }
 
 func (q *Queen) persistLiveAntsKeys() {
-	logger.Debugln("Persisting live ants keys")
+	slog.Debug("Persisting live ants keys")
 	antsKeys := make([]crypto.PrivKey, 0, len(q.ants))
 	for _, ant := range q.ants {
 		antsKeys = append(antsKeys, ant.cfg.PrivateKey)
 	}
 	q.keysDB.MatchingKeys(nil, antsKeys)
-	logger.Debugf("Number of antsKeys persisted: %d", len(antsKeys))
+	slog.Debug("Persisted live ants keys", "count", len(antsKeys))
 }
 
 // routine must be called periodically to ensure that the number and positions
@@ -263,7 +239,7 @@ func (q *Queen) routine(ctx context.Context) {
 	// get online DHT servers from the Nebula database
 	response, err := q.nebulaClient.GetLatestPeerIDs(ctx, request)
 	if err != nil {
-		logger.Warn("unable to get latest peer ids from Nebula ", err)
+		slog.Warn("unable to get latest peer ids from Nebula", "err", err)
 		return
 	}
 
@@ -272,7 +248,7 @@ func (q *Queen) routine(ctx context.Context) {
 	for _, peerId := range response.PeerIds {
 		pid, err := peer.Decode(peerId)
 		if err != nil {
-			logger.Warn("unable to decode peer id: ", err)
+			slog.Warn("unable to decode peer id", "err", err)
 			continue
 		}
 		networkTrie.Add(PeerIDToKadID(pid), pid)
@@ -282,7 +258,7 @@ func (q *Queen) routine(ctx context.Context) {
 	// ant. One ant's kademlia ID MUST match each of the returned prefixes in
 	// order to ensure global coverage.
 	zones := trieZones(networkTrie, q.cfg.BucketSize-1)
-	logger.Debugf("%d zones must be covered by ants", len(zones))
+	slog.Debug("zones must be covered by ants", "zones", len(zones))
 
 	// convert string zone to bitstr.Key
 	missingKeys := make([]bitstr.Key, len(zones))
@@ -308,9 +284,7 @@ func (q *Queen) routine(ctx context.Context) {
 			excessAntsIndices = append(excessAntsIndices, index)
 		}
 	}
-	logger.Debugf("currently have %d ants", len(q.ants))
-	logger.Debugf("need %d extra ants", len(missingKeys))
-	logger.Debugf("removing %d ants", len(excessAntsIndices))
+	slog.Debug("ant accounting", "current", len(q.ants), "needed", len(missingKeys), "removing", len(excessAntsIndices))
 
 	// kill ants that are not needed anymore
 	// sort indices in descending order to remove from end first
@@ -322,7 +296,7 @@ func (q *Queen) routine(ctx context.Context) {
 		port := ant.cfg.Port
 
 		if err := ant.Close(); err != nil {
-			logger.Warn("error closing ant", err)
+			slog.Warn("error closing ant", "err", err)
 		}
 
 		q.ants = append(q.ants[:index], q.ants[index+1:]...)
@@ -335,7 +309,7 @@ func (q *Queen) routine(ctx context.Context) {
 	for _, key := range privKeys {
 		port, err := q.takeAvailablePort()
 		if err != nil {
-			logger.Error("trying to spawn new ant: ", err)
+			slog.Error("trying to spawn new ant", "err", err)
 			continue
 		}
 
@@ -352,7 +326,7 @@ func (q *Queen) routine(ctx context.Context) {
 
 		ant, err := SpawnAnt(ctx, q.peerstore, q.datastore, antCfg)
 		if err != nil {
-			logger.Warn("error creating ant", err)
+			slog.Warn("error creating ant", "err", err)
 			continue
 		}
 
@@ -361,8 +335,7 @@ func (q *Queen) routine(ctx context.Context) {
 
 	q.cfg.Telemetry.AntsCountGauge.Record(ctx, int64(len(q.ants)))
 
-	logger.Debugf("ants count: %d", len(q.ants))
-	logger.Debug("queen routine over")
+	slog.Debug("queen routine over", "ants", len(q.ants))
 }
 
 // trieZones is a recursive function returning the prefixes that the ants must

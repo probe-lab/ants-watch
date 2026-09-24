@@ -3,11 +3,13 @@ package ants
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/caddyserver/certmagic"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-libdht/kad/key/bit256"
+	logging "github.com/ipfs/go-log/v2"
 	p2pforge "github.com/ipshipyard/p2p-forge/client"
 	"github.com/libp2p/go-libp2p"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
@@ -34,6 +36,9 @@ import (
 
 	"github.com/probe-lab/ants-watch/metrics"
 )
+
+// forgeLogger backs the p2p-forge cert manager, which requires a zap logger.
+var forgeLogger = logging.Logger("ants-forge")
 
 type RequestEvent struct {
 	Timestamp    time.Time
@@ -119,7 +124,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 			certLoadedChan <- struct{}{}
 		}),
 		p2pforge.WithShortForgeAddrs(true),
-		p2pforge.WithLogger(logger.Desugar().WithOptions(zap.IncreaseLevel(zap.InfoLevel)).Sugar()),
+		p2pforge.WithLogger(forgeLogger.Desugar().WithOptions(zap.IncreaseLevel(zap.InfoLevel)).Sugar()),
 		p2pforge.WithCertificateStorage(&certmagic.FileStorage{Path: cfg.CertPath}),
 	)
 	if err != nil {
@@ -202,10 +207,10 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 	if err != nil {
 		return nil, fmt.Errorf("new libp2p dht: %w", err)
 	}
-	logger.Debugf("spawned ant. kadid: %s, peerid: %s", PeerIDToKadID(h.ID()).HexString(), h.ID())
+	slog.Debug("spawned ant", "kadid", PeerIDToKadID(h.ID()).HexString(), "peerid", h.ID())
 
 	if err = dht.Bootstrap(ctx); err != nil {
-		logger.Warn("bootstrap failed: %s", err)
+		slog.Warn("bootstrap failed", "err", err)
 	}
 
 	certMgr.ProvideHost(h)
@@ -216,9 +221,9 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 
 	go func() {
 		for range certLoadedChan {
-			logger.Infow("Loaded certificate", "ant", h.ID())
+			slog.Info("Loaded certificate", "ant", h.ID())
 		}
-		logger.Debug("certificate loaded channel closed")
+		slog.Debug("certificate loaded channel closed")
 	}()
 
 	sub, err := h.EventBus().Subscribe([]interface{}{
@@ -237,7 +242,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 					continue
 				}
 
-				logger.Infow("Ant now listening on:", "ant", h.ID())
+				slog.Info("Ant now listening", "ant", h.ID())
 				for i, maddr := range evt.Current {
 					actionStr := ""
 					switch maddr.Action {
@@ -250,10 +255,10 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 					default:
 						continue
 					}
-					logger.Infof("[%d] %s %s/p2p/%s", i, actionStr, maddr.Address, h.ID())
+					slog.Info("address update", "idx", i, "action", actionStr, "maddr", fmt.Sprintf("%s/p2p/%s", maddr.Address, h.ID()))
 				}
 			case event.EvtLocalReachabilityChanged:
-				logger.Infow("Reachability changed", "ant", h.ID(), "reachability", evt.Reachability)
+				slog.Info("Reachability changed", "ant", h.ID(), "reachability", evt.Reachability)
 			}
 		}
 	}()
@@ -300,14 +305,14 @@ func onRequestHook(h host.Host, cfg *AntConfig) func(ctx context.Context, s netw
 
 func (a *Ant) Close() error {
 	if err := a.sub.Close(); err != nil {
-		logger.Warnf("failed to close address update subscription: %s", err)
+		slog.Warn("failed to close address update subscription", "err", err)
 	}
 
 	a.certMgr.Stop()
 	close(a.certLoadedChan)
 
 	if err := a.dht.Close(); err != nil {
-		logger.Warnf("failed to close dht: %s", err)
+		slog.Warn("failed to close dht", "err", err)
 	}
 	return a.host.Close()
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
 	"github.com/ipfs/go-cid"
@@ -33,7 +34,7 @@ func (db *KeysDB) readKeysFromFile() *trie.Trie[bit256.Key, crypto.PrivKey] {
 	// load file
 	file, err := os.OpenFile(db.filepath, os.O_RDONLY, 0o600)
 	if err != nil {
-		logger.Warn("Couldn't open file", db.filepath, ":", err)
+		slog.Warn("Couldn't open file", "path", db.filepath, "err", err)
 		return keysTrie
 	}
 	defer func() { _ = file.Close() }()
@@ -46,20 +47,20 @@ func (db *KeysDB) readKeysFromFile() *trie.Trie[bit256.Key, crypto.PrivKey] {
 			break // End of file, exit the loop
 		}
 		if err != nil {
-			logger.Warnf("Error reading key: %v", err)
+			slog.Warn("Error reading key", "err", err)
 			break
 		}
 
 		// Unmarshal the private key
 		privKey, err := crypto.UnmarshalEd25519PrivateKey(keyBytes)
 		if err != nil {
-			logger.Warnf("Error parsing key: %v", err)
+			slog.Warn("Error parsing key", "err", err)
 			continue
 		}
 		// Derive the peer ID from the private key
 		pid, err := peer.IDFromPrivateKey(privKey)
 		if err != nil {
-			logger.Warnf("Error getting peer ID: %v", err)
+			slog.Warn("Error getting peer ID", "err", err)
 			continue
 		}
 
@@ -72,7 +73,7 @@ func (db *KeysDB) readKeysFromFile() *trie.Trie[bit256.Key, crypto.PrivKey] {
 func (db *KeysDB) writeKeysToFile(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey]) {
 	file, err := os.OpenFile(db.filepath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
-		logger.Warn("Couldn't open file", db.filepath, ":", err)
+		slog.Warn("Couldn't open file", "path", db.filepath, "err", err)
 		return
 	}
 	defer func() { _ = file.Close() }()
@@ -85,12 +86,12 @@ func (db *KeysDB) writeKeysToFile(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey
 		}
 		raw, err := entry.Data.Raw()
 		if err != nil {
-			logger.Warn("error getting raw key", err)
+			slog.Warn("error getting raw key", "err", err)
 			continue
 		}
 		_, err = file.Write(raw)
 		if err != nil {
-			logger.Warn("error writing key to file", err)
+			slog.Warn("error writing key to file", "err", err)
 		}
 	}
 }
@@ -100,13 +101,13 @@ func (db *KeysDB) writeKeysToFile(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey
 func integrateKeysIntoTrie(keysTrie *trie.Trie[bit256.Key, crypto.PrivKey], keys []crypto.PrivKey) {
 	for _, key := range keys {
 		if key == nil {
-			logger.Warn("skipping nil key")
+			slog.Warn("skipping nil key")
 			continue
 		}
 
 		pid, err := peer.IDFromPrivateKey(key)
 		if err != nil {
-			logger.Warnf("Error getting peer ID: %v", err)
+			slog.Warn("Error getting peer ID", "err", err)
 			continue
 		}
 		keysTrie.Add(PeerIDToKadID(pid), key)
@@ -150,7 +151,7 @@ func getMatchingKeys(prefixes []bitstr.Key, keysTrie *trie.Trie[bit256.Key, cryp
 				// derive peer ID from the private key
 				pid, err := peer.IDFromPrivateKey(newKey)
 				if err != nil {
-					logger.Warnf("Error getting peer ID: %v", err)
+					slog.Warn("Error getting peer ID", "err", err)
 					continue
 				}
 				// check if the new key matches the prefix
