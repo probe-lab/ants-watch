@@ -25,6 +25,12 @@ non-cluster-migrations:
 local-migrate-down: non-cluster-migrations
     migrate -database 'clickhouse://localhost:9000?username=ants_local&database=ants_local&password=password&x-multi-statement=true' -path db/migrations/local down
 
+# Format, vet, and lint the codebase
+check:
+    gofmt -w .
+    go vet ./...
+    golangci-lint run
+
 # Build the linux/amd64 docker image
 build:
     @echo "{{ tag }}"
