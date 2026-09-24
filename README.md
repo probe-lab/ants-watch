@@ -49,20 +49,18 @@ supported protocols, IP addresses, and more.
 
 ### Prerequisites
 
-You need go-migrate to run the clickhouse database migrations:
+Migrations are embedded in the binary and applied automatically by the queen on
+startup, so no external tooling is required for the common path. The `migrate`
+CLI is only needed to roll migrations back (`just local-migrate-down`):
 
 ```shell
-make tools
-
-# or
-
 go install -tags 'clickhouse' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.15.2
 ```
 
-You can then start a Clickhouse database with:
+You can start a Clickhouse database with:
 
 ```shell
-make local-clickhouse
+just local-clickhouse
 
 # or
 
@@ -78,26 +76,20 @@ This will start a Clickhouse server with the container name `ants-clickhouse` th
 * database: `ants_local`
 * secure: `false`
 
-Then you need to apply the migrations with:
-
-```shell
-make local-migrate-up
-```
-
-This will take the migration files in the `./db/migrations` directory and strip all the `Replicated` merge tree prefixes before applying the migrations.
+The queen applies the embedded migration files from `./db/migrations` on startup, stripping the `Replicated` merge tree prefixes in-code.
 The `Replicated` merge tree table engines only work with a clustered clickhouse deployment (e.g., clickhouse cloud). When
-running locally, you will only have a single clickhouse instance, so applying `Replicated` migrations will fail.
-
-I'm all ears how to improve the workflow here.
+running locally, you will only have a single clickhouse instance, so applying `Replicated` migrations would otherwise fail.
+Set `ANTS_CLICKHOUSE_MIGRATIONS_REPLICATED_TABLE_ENGINES=true` on a clustered deployment to keep the `Replicated` engines.
 
 ### Configuration
 
 The following environment variables should be set for ants-watch:
 
 ```sh
-ANTS_CLICKHOUSE_ADDRESS=localhost:9000
+ANTS_CLICKHOUSE_HOST=localhost
+ANTS_CLICKHOUSE_PORT=9000
 ANTS_CLICKHOUSE_DATABASE=ants_local
-ANTS_CLICKHOUSE_USERNAME=ants_local
+ANTS_CLICKHOUSE_USER=ants_local
 ANTS_CLICKHOUSE_PASSWORD=password
 ANTS_CLICKHOUSE_SSL=false
 
@@ -127,7 +119,7 @@ When UPnP is disabled, ports from `firstPort` to `firstPort + nPorts - 1` must b
 You can run a health check on the honeypot by running the following command:
 
 ```sh
-go run . health
+go run ./cmd/ants health
 ```
 
 ## Ants Key Generation
