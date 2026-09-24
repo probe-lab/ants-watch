@@ -50,12 +50,7 @@ supported protocols, IP addresses, and more.
 ### Prerequisites
 
 Migrations are embedded in the binary and applied automatically by the queen on
-startup, so no external tooling is required for the common path. The `migrate`
-CLI is only needed to roll migrations back (`just local-migrate-down`):
-
-```shell
-go install -tags 'clickhouse' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.15.2
-```
+startup, so no external tooling is required.
 
 You can start a Clickhouse database with:
 
