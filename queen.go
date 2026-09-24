@@ -38,6 +38,8 @@ type QueenConfig struct {
 	CrawlInterval   time.Duration
 	CacheSize       int
 	BucketSize      int
+	Project         string
+	Network         string
 	UserAgent       string
 	BootstrapPeers  []peer.AddrInfo
 	ProtocolID      string
@@ -230,10 +232,9 @@ func (q *Queen) persistLiveAntsKeys() {
 // routine must be called periodically to ensure that the number and positions
 // of ants is still relevant given the latest observed DHT servers.
 func (q *Queen) routine(ctx context.Context) {
-	// hard-coded for now
 	request := &nebulav1.GetLatestPeerIDsRequest{
-		Project: "celestia",
-		Network: "mainnet",
+		Project: q.cfg.Project,
+		Network: q.cfg.Network,
 	}
 
 	// get online DHT servers from the Nebula database

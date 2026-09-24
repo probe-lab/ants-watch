@@ -35,8 +35,9 @@ var queenConfig = struct {
 	CrawlInterval   time.Duration
 	CacheSize       int
 	BucketSize      int
-	UserAgent       string
+	Project         string
 	Network         string
+	UserAgent       string
 	ThrottleTimeout time.Duration
 }{
 	NebulaSvcHost:   "localhost",
@@ -51,8 +52,9 @@ var queenConfig = struct {
 	CrawlInterval:   120 * time.Minute,
 	CacheSize:       10_000,
 	BucketSize:      20,
-	UserAgent:       ants.UserAgent(ants.CelestiaMainnet),
-	Network:         string(ants.CelestiaMainnet),
+	Project:         "celestia",
+	Network:         "mainnet",
+	UserAgent:       "", // derived from project/network unless overridden
 	ThrottleTimeout: 5 * time.Minute,
 }
 
@@ -86,8 +88,15 @@ func main() {
 func queenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHouseMigrationsConfig) *cli.Command {
 	flags := []cli.Flag{
 		&cli.StringFlag{
+			Name:        "project",
+			Usage:       "The project to watch, e.g. celestia, agntcy, avail",
+			Sources:     cli.EnvVars("ANTS_PROJECT"),
+			Destination: &queenConfig.Project,
+			Value:       queenConfig.Project,
+		},
+		&cli.StringFlag{
 			Name:        "network",
-			Usage:       "Which network to use",
+			Usage:       "The project's network to watch, e.g. mainnet, mocha-4",
 			Sources:     cli.EnvVars("ANTS_NETWORK"),
 			Destination: &queenConfig.Network,
 			Value:       queenConfig.Network,
@@ -220,13 +229,19 @@ func runQueenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHous
 			}
 		}
 
+		netCfg, ok := ants.LookupNetwork(queenConfig.Project, queenConfig.Network)
+		if !ok {
+			return fmt.Errorf("no bootstrap peers configured for project %q network %q", queenConfig.Project, queenConfig.Network)
+		}
+
+		userAgent := netCfg.UserAgent
+		if c.IsSet("user.agent") {
+			userAgent = queenConfig.UserAgent
+		}
+
 		writer, err := newRequestWriter(ctx, chCfg)
 		if err != nil {
 			return err
-		}
-
-		if !c.IsSet("user.agent") {
-			queenConfig.UserAgent = ants.UserAgent(ants.Network(queenConfig.Network))
 		}
 
 		options := []grpc.DialOption{
@@ -256,10 +271,12 @@ func runQueenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHous
 			CrawlInterval:   queenConfig.CrawlInterval,
 			CacheSize:       queenConfig.CacheSize,
 			BucketSize:      queenConfig.BucketSize,
-			UserAgent:       queenConfig.UserAgent,
+			Project:         queenConfig.Project,
+			Network:         queenConfig.Network,
+			UserAgent:       userAgent,
 			ThrottleTimeout: queenConfig.ThrottleTimeout,
-			BootstrapPeers:  ants.BootstrapPeers(ants.Network(queenConfig.Network)),
-			ProtocolID:      ants.ProtocolID(ants.Network(queenConfig.Network)),
+			BootstrapPeers:  netCfg.BootstrapPeers,
+			ProtocolID:      netCfg.ProtocolID,
 			Telemetry:       telemetry,
 		}
 
