@@ -11,10 +11,11 @@ These tasks consist of sending requests to several other nodes close to oneself 
 that at least one of these requests will **always** hit one of the deployed ants. When a request hits an ant, we record information about the requesting peer like agent version,
 supported protocols, IP addresses, and more.
 
-**Supported networks:**
+**Supported networks** (selected via `--project`/`--network`):
 
-* [Celestia](https://celestia.org/)
-* Can be extended to support other networks using the [libp2p DHT](https://github.com/libp2p/specs/tree/master/kad-dht).
+* [Celestia](https://celestia.org/) — `celestia/mainnet`, `celestia/arabica-11`, `celestia/mocha-4`
+* [Avail](https://availproject.org/) — `avail/mainnet-lc`
+* Can be extended to support other networks using the [libp2p DHT](https://github.com/libp2p/specs/tree/master/kad-dht) by adding an entry to `bootstrappers.go`.
 
 
 ## Table of Contents
@@ -81,6 +82,10 @@ Set `ANTS_CLICKHOUSE_MIGRATIONS_REPLICATED_TABLE_ENGINES=true` on a clustered de
 The following environment variables should be set for ants-watch:
 
 ```sh
+# project + network select the DHT and are the pair requested from nebula
+ANTS_PROJECT=celestia
+ANTS_NETWORK=mainnet
+
 ANTS_CLICKHOUSE_HOST=localhost
 ANTS_CLICKHOUSE_PORT=9000
 ANTS_CLICKHOUSE_DATABASE=ants_local
@@ -88,7 +93,9 @@ ANTS_CLICKHOUSE_USER=ants_local
 ANTS_CLICKHOUSE_PASSWORD=password
 ANTS_CLICKHOUSE_SSL=false
 
-ANTS_NEBULA_CONNSTRING=postgres://nebula:password@localhost/nebula?sslmode=disable # change with proper values for the datbase you want to use
+# the queen reaches the nebula service over gRPC
+ANTS_NEBULA_SERVICE_HOST=localhost
+ANTS_NEBULA_SERVICE_PORT=8282
 ```
 
 ## Usage
@@ -102,10 +109,12 @@ Once the database is set up and migrations are applied, you can start the honeyp
 To start the ants queen, you can run the following command:
 
 ```sh
-go run ./cmd/ants queen --upnp # for UPnP
+go run ./cmd/ants queen --project celestia --network mainnet --upnp # for UPnP
 # or
-go run ./cmd/ants queen --first.port=<port> --num.ports=<count> # for port forwarding
+go run ./cmd/ants queen --project celestia --network mainnet --first.port=<port> --num.ports=<count> # for port forwarding
 ```
+
+Use `--project`/`--network` (default `celestia`/`mainnet`) to select the network. The queen fails to start if the pair has no configured bootstrap peers (see `bootstrappers.go`).
 
 When UPnP is disabled, ports from `firstPort` to `firstPort + nPorts - 1` must be forwarded to the machine running `ants-watch`. `ants-watch` will be able to spawn at most `nPorts` distinct `ants`.
 
