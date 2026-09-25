@@ -17,8 +17,6 @@ on:
 env:
   AWS_REGION: us-east-1
   AWS_ROLE: arn:aws:iam::019120760881:role/prod-use1-github-oidc-role
-  AWS_ECS_TASK_DEFINITION: prod-use1-cmi-ants-celestia-watch-task
-  AWS_ECS_SERVICE: prod-use1-cmi-ants-celestia-watch
   AWS_ECS_CLUSTER_NAME: prod-use1-cmi-ecs-cluster
   AWS_ECR_REPOSITORY: probelab
 
@@ -26,6 +24,14 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [celestia, agntcy]
+    env:
+      AWS_ECS_TASK_DEFINITION: prod-use1-cmi-ants-${{ matrix.project }}-watch-task
+      AWS_ECS_SERVICE: prod-use1-cmi-ants-${{ matrix.project }}-watch
+      AWS_ECS_CONTAINER: prod-use1-cmi-ants-${{ matrix.project }}-watch
     steps:
       - name: Checking out repository code
         uses: actions/checkout@v4
@@ -71,7 +77,7 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition-cleaned.json
-          container-name: prod-use1-cmi-ants-celestia-watch
+          container-name: ${{ env.AWS_ECS_CONTAINER }}
           image: ${{ inputs.imageTag }}
 
       - name: Deploying to Amazon ECS

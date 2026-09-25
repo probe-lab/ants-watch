@@ -205,7 +205,7 @@ func queenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHouseMi
 			Value:       queenConfig.ThrottleTimeout,
 		},
 	}
-	flags = append(flags, gccli.ClickHouseFlags("ants", chCfg)...)
+	flags = append(flags, gccli.ClickHouseFlags("ANTS_", chCfg)...)
 	flags = append(flags, gccli.ClickHouseMigrationsFlags("ANTS_", migrationsCfg)...)
 
 	return &cli.Command{
