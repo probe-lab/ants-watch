@@ -58,6 +58,10 @@ var queenConfig = struct {
 	ThrottleTimeout: 5 * time.Minute,
 }
 
+// rootConfig holds the shared root command config (logging, telemetry, etc.) so
+// it can be printed on startup alongside the queen command config.
+var rootConfig *gccli.RootCommandConfig
+
 func main() {
 	_ = logging.SetLogLevel("dht", "error")
 	_ = logging.SetLogLevel("basichost", "info")
@@ -78,7 +82,8 @@ func main() {
 		},
 	}
 
-	root, _ := gccli.NewRootCommand(cmd)
+	root, rootCfg := gccli.NewRootCommand(cmd)
+	rootConfig = rootCfg
 	if err := root.Run(); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("running app", "err", err)
 		os.Exit(1)
@@ -213,6 +218,11 @@ func queenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHouseMi
 
 func runQueenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHouseMigrationsConfig) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
+		safePrintConfig("root", rootConfig)
+		safePrintConfig("queen", queenConfig)
+		safePrintConfig("clickhouse", chCfg)
+		safePrintConfig("migrations", migrationsCfg)
+
 		telemetry, err := metrics.NewTelemetry()
 		if err != nil {
 			return fmt.Errorf("init telemetry: %w", err)
@@ -224,9 +234,13 @@ func runQueenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHous
 			if err := chCfg.Validate(); err != nil {
 				return fmt.Errorf("clickhouse config: %w", err)
 			}
+			slog.Info("applying clickhouse migrations", "host", chCfg.BaseConfig.Host, "database", chCfg.Database)
 			if err := migrationsCfg.Apply(chCfg.Options(), db.Migrations); err != nil {
 				return fmt.Errorf("apply migrations: %w", err)
 			}
+			slog.Info("clickhouse migrations applied")
+		} else {
+			slog.Warn("skipping clickhouse migrations: no clickhouse host configured")
 		}
 
 		netCfg, ok := ants.LookupNetwork(queenConfig.Project, queenConfig.Network)
