@@ -45,6 +45,7 @@ type QueenConfig struct {
 	ProtocolID      string
 	ThrottleTimeout time.Duration
 	Telemetry       *metrics.Telemetry
+	PublicIP        string
 }
 
 type Queen struct {
@@ -323,6 +324,7 @@ func (q *Queen) routine(ctx context.Context) {
 			RequestsChan:   q.antsEvents,
 			CertPath:       q.cfg.CertsPath,
 			Telemetry:      q.cfg.Telemetry,
+			PublicIP:       q.cfg.PublicIP,
 		}
 
 		ant, err := SpawnAnt(ctx, q.peerstore, q.datastore, antCfg)

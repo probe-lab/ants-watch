@@ -39,6 +39,7 @@ var queenConfig = struct {
 	Network         string
 	UserAgent       string
 	ThrottleTimeout time.Duration
+	PublicIP        string
 }{
 	NebulaSvcHost:   "localhost",
 	NebulaSvcPort:   8383,
@@ -56,6 +57,7 @@ var queenConfig = struct {
 	Network:         "mainnet",
 	UserAgent:       "", // derived from project/network unless overridden
 	ThrottleTimeout: 5 * time.Minute,
+	PublicIP:        "", // when set (e.g. via ANTS_PUBLIC_IP on AWS), announce this public IPv4
 }
 
 // rootConfig holds the shared root command config (logging, telemetry, etc.) so
@@ -105,6 +107,13 @@ func queenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHouseMi
 			Sources:     cli.EnvVars("ANTS_NETWORK"),
 			Destination: &queenConfig.Network,
 			Value:       queenConfig.Network,
+		},
+		&cli.StringFlag{
+			Name:        "public.ip",
+			Usage:       "Override the public IPv4 announced with each ant's port; empty auto-detects via checkip.amazonaws.com, 0.0.0.0 keeps default behavior",
+			Sources:     cli.EnvVars("ANTS_PUBLIC_IP"),
+			Destination: &queenConfig.PublicIP,
+			Value:       queenConfig.PublicIP,
 		},
 		&cli.StringFlag{
 			Name:        "nebula.svc.host",
@@ -228,8 +237,6 @@ func runQueenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHous
 			return fmt.Errorf("init telemetry: %w", err)
 		}
 
-		// Apply pending migrations before writing, unless running without a
-		// ClickHouse backend (empty host selects the no-op writer).
 		if chCfg.BaseConfig.Host != "" {
 			if err := chCfg.Validate(); err != nil {
 				return fmt.Errorf("clickhouse config: %w", err)
@@ -276,6 +283,11 @@ func runQueenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHous
 		nebulaClient := nebulav1.NewNebulaServiceClient(nebulaConn)
 		slog.Info("Initialized Nebula service client", "addr", nebulaSvcAddr)
 
+		// auto-detect public IPv4 unless overridden
+		if queenConfig.PublicIP == "" {
+			queenConfig.PublicIP = ants.FetchPublicIPv4(ctx)
+		}
+
 		queenCfg := &ants.QueenConfig{
 			KeysDBPath:      queenConfig.KeyDBPath,
 			CertsPath:       queenConfig.CertsPath,
@@ -289,6 +301,7 @@ func runQueenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHous
 			Network:         queenConfig.Network,
 			UserAgent:       userAgent,
 			ThrottleTimeout: queenConfig.ThrottleTimeout,
+			PublicIP:        queenConfig.PublicIP,
 			BootstrapPeers:  netCfg.BootstrapPeers,
 			ProtocolID:      netCfg.ProtocolID,
 			Telemetry:       telemetry,
