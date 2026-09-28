@@ -43,7 +43,7 @@ func fetchPublicIPv4FromCheckip(ctx context.Context) string {
 		slog.Warn("fetch public IP", "err", err)
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -64,6 +64,14 @@ func fetchPublicIPv4FromCheckip(ctx context.Context) string {
 // fetchPublicIPv4FromECS resolves the task's public IPv4 via the ECS/EC2 APIs,
 // returning "" on any failure.
 func fetchPublicIPv4FromECS(ctx context.Context) string {
+	if os.Getenv("ECS_CONTAINER_METADATA_URI_V4") == "" {
+		slog.Warn("not running on ECS; skipping ECS public IP lookup")
+		return ""
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	cluster, taskARN, err := ecsTaskIdentity(ctx)
 	if err != nil {
 		slog.Warn("read ECS task metadata", "err", err)
@@ -111,7 +119,7 @@ func ecsTaskIdentity(ctx context.Context) (cluster, taskARN string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
