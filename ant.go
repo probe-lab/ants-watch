@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"time"
 
 	"github.com/caddyserver/certmagic"
@@ -73,6 +74,7 @@ type AntConfig struct {
 	RequestsChan   chan<- RequestEvent
 	CertPath       string
 	Telemetry      *metrics.Telemetry
+	PublicIP       string
 }
 
 func (cfg *AntConfig) Validate() error {
@@ -156,6 +158,38 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		fmt.Sprintf("/ip6/::/tcp/%d/tls/sni/*.%s/ws", cfg.Port, forgeDomain), // cert manager websocket multi address
 	}
 
+	forgeFactory := certMgr.AddressFactory()
+	pubIP := net.ParseIP(cfg.PublicIP)
+	var pubComp *multiaddr.Component
+	if pubIP != nil && pubIP.To4() != nil && !pubIP.IsUnspecified() {
+		pubComp, _ = multiaddr.NewComponent("ip4", pubIP.String())
+	}
+	// add a public-IPv4 copy of each IPv4 listen addr, then defer to forge
+	announceFactory := func(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+		if pubComp == nil {
+			return forgeFactory(addrs)
+		}
+		seen := make(map[string]struct{}, len(addrs)*2)
+		out := make([]multiaddr.Multiaddr, 0, len(addrs)*2)
+		add := func(m multiaddr.Multiaddr) {
+			s := m.String()
+			if _, ok := seen[s]; ok {
+				return
+			}
+			seen[s] = struct{}{}
+			out = append(out, m)
+		}
+		for _, a := range addrs {
+			add(a)
+			first, rest := multiaddr.SplitFirst(a)
+			if first == nil || rest == nil || first.Protocol().Code != multiaddr.P_IP4 {
+				continue
+			}
+			add(pubComp.Encapsulate(rest))
+		}
+		return forgeFactory(out)
+	}
+
 	opts := []libp2p.Option{
 		libp2p.UserAgent(cfg.UserAgent),
 		libp2p.Identity(cfg.PrivateKey),
@@ -171,7 +205,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		libp2p.Transport(libp2pwebtransport.New),
 		libp2p.Transport(libp2pwebrtc.New),
 		libp2p.Transport(libp2pws.New, libp2pws.WithTLSConfig(certMgr.TLSConfig())),
-		libp2p.AddrsFactory(certMgr.AddressFactory()),
+		libp2p.AddrsFactory(announceFactory),
 	}
 
 	if cfg.Port == 0 {
