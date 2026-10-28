@@ -2,6 +2,8 @@ package ants
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"net"
@@ -55,6 +57,17 @@ type RequestEvent struct {
 
 func (r *RequestEvent) IsIdentified() bool {
 	return r.AgentVersion != "" && len(r.Protocols) > 0
+}
+
+// Hash identifies an RPC by remote peer, message type and target key.
+func (r *RequestEvent) Hash() [32]byte {
+	pid := []byte(r.Remote)
+	buf := make([]byte, 0, 8+len(pid)+len(r.Target))
+	buf = binary.BigEndian.AppendUint32(buf, uint32(len(pid)))
+	buf = append(buf, pid...)
+	buf = binary.BigEndian.AppendUint32(buf, uint32(r.Type))
+	buf = append(buf, r.Target...)
+	return sha256.Sum256(buf)
 }
 
 func (r *RequestEvent) MaddrStrings() []string {
