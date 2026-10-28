@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	ds "github.com/ipfs/go-datastore"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-libdht/kad"
@@ -44,6 +44,7 @@ type QueenConfig struct {
 	BootstrapPeers  []peer.AddrInfo
 	ProtocolID      string
 	ThrottleTimeout time.Duration
+	DedupCacheSize  int
 	Telemetry       *metrics.Telemetry
 	PublicIP        string
 }
@@ -61,7 +62,8 @@ type Queen struct {
 	ants       []*Ant
 	antsEvents chan RequestEvent
 
-	peerSeen *lru.Cache[peer.ID, time.Time]
+	// seenRPCs holds hashes of recently stored RPCs; nil disables dedup.
+	seenRPCs *expirable.LRU[[32]byte, struct{}]
 
 	// portsOccupancy is a slice of bools that represent the occupancy of the ports
 	// false corresponds to an available port, true to an occupied port
@@ -82,9 +84,9 @@ func NewQueen(requestWriter db.RequestWriter, nebulaClient nebulav1.NebulaServic
 		return nil, fmt.Errorf("creating in-memory leveldb: %w", err)
 	}
 
-	cache, err := lru.New[peer.ID, time.Time](2048)
-	if err != nil {
-		return nil, fmt.Errorf("creating lru cache: %w", err)
+	var seenRPCs *expirable.LRU[[32]byte, struct{}]
+	if cfg.ThrottleTimeout > 0 {
+		seenRPCs = expirable.NewLRU[[32]byte, struct{}](cfg.DedupCacheSize, nil, cfg.ThrottleTimeout)
 	}
 
 	queen := &Queen{
@@ -96,7 +98,7 @@ func NewQueen(requestWriter db.RequestWriter, nebulaClient nebulav1.NebulaServic
 		datastore:      ldb,
 		ants:           []*Ant{},
 		antsEvents:     make(chan RequestEvent, 1024),
-		peerSeen:       cache,
+		seenRPCs:       seenRPCs,
 		requestWriter:  requestWriter,
 		portsOccupancy: make([]bool, cfg.NPorts),
 	}
@@ -164,14 +166,9 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 			cancel()
 			return
 		case evt := <-q.antsEvents:
-			if q.cfg.ThrottleTimeout > 0 {
-				lastSeen, found := q.peerSeen.Peek(evt.Remote)
-				if found && time.Since(lastSeen) < q.cfg.ThrottleTimeout {
-					q.cfg.Telemetry.DroppedRequestsCounter.Add(ctx, 1)
-					continue
-				} else if evt.IsIdentified() {
-					q.peerSeen.Add(evt.Remote, time.Now())
-				}
+			if q.isDuplicate(evt) {
+				q.cfg.Telemetry.DroppedRequestsCounter.Add(ctx, 1)
+				continue
 			}
 
 			q.cfg.Telemetry.TrackedRequestsCounter.Add(ctx, 1, metric.WithAttributes(
@@ -189,6 +186,21 @@ func (q *Queen) consumeAntsEvents(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// isDuplicate reports whether the same RPC was already seen within the
+// dedup window. The window starts at the first sighting and isn't refreshed.
+func (q *Queen) isDuplicate(evt RequestEvent) bool {
+	if q.seenRPCs == nil {
+		return false
+	}
+	h := evt.Hash()
+	// Peek, not Contains: Contains ignores the TTL of not-yet-evicted entries.
+	if _, found := q.seenRPCs.Peek(h); found {
+		return true
+	}
+	q.seenRPCs.Add(h, struct{}{})
+	return false
 }
 
 func (q *Queen) toDatabaseRequest(evt RequestEvent) (db.Request, error) {

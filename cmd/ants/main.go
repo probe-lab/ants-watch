@@ -39,6 +39,7 @@ var queenConfig = struct {
 	Network         string
 	UserAgent       string
 	ThrottleTimeout time.Duration
+	DedupCacheSize  int
 	PublicIP        string
 }{
 	NebulaSvcHost:   "localhost",
@@ -57,6 +58,7 @@ var queenConfig = struct {
 	Network:         "mainnet",
 	UserAgent:       "", // derived from project/network unless overridden
 	ThrottleTimeout: 5 * time.Minute,
+	DedupCacheSize:  100_000,
 	PublicIP:        "", // when set (e.g. via ANTS_PUBLIC_IP on AWS), announce this public IPv4
 }
 
@@ -208,10 +210,17 @@ func queenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHouseMi
 		},
 		&cli.DurationFlag{
 			Name:        "throttle.timeout",
-			Usage:       "Time to throttle requests from the same identified peer (0 to disable)",
+			Usage:       "Window to drop repeated RPCs (same peer, type and key) (0 to disable)",
 			Sources:     cli.EnvVars("ANTS_THROTTLE_TIMEOUT"),
 			Destination: &queenConfig.ThrottleTimeout,
 			Value:       queenConfig.ThrottleTimeout,
+		},
+		&cli.IntFlag{
+			Name:        "dedup.cache.size",
+			Usage:       "Max number of RPC hashes kept for deduplication",
+			Sources:     cli.EnvVars("ANTS_DEDUP_CACHE_SIZE"),
+			Destination: &queenConfig.DedupCacheSize,
+			Value:       queenConfig.DedupCacheSize,
 		},
 	}
 	flags = append(flags, gccli.ClickHouseFlags("ANTS_", chCfg)...)
@@ -301,6 +310,7 @@ func runQueenCommand(chCfg *gcdb.ClickHouseConfig, migrationsCfg *gcdb.ClickHous
 			Network:         queenConfig.Network,
 			UserAgent:       userAgent,
 			ThrottleTimeout: queenConfig.ThrottleTimeout,
+			DedupCacheSize:  queenConfig.DedupCacheSize,
 			PublicIP:        queenConfig.PublicIP,
 			BootstrapPeers:  netCfg.BootstrapPeers,
 			ProtocolID:      netCfg.ProtocolID,
