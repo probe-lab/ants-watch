@@ -1,6 +1,6 @@
 module github.com/probe-lab/ants-watch
 
-go 1.25.7
+go 1.26.2
 
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.6
