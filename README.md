@@ -150,4 +150,4 @@ Standard Readme follows the [Contributor Covenant](http://contributor-covenant.o
 
 ## License
 
-[MIT](LICENSE) © ProbeLab
+[PolyForm Strict License 1.0.0](LICENSE)
