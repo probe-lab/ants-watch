@@ -1,0 +1,10 @@
+# Keeps the GitHub Actions of the workflows current. Add the ecosystem of the
+# repo's language (gomod, uv) below when the repo wants dependency updates.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
