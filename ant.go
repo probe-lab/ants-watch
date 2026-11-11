@@ -273,7 +273,7 @@ func SpawnAnt(ctx context.Context, ps peerstore.Peerstore, ds ds.Batching, cfg *
 		slog.Debug("certificate loaded channel closed")
 	}()
 
-	sub, err := h.EventBus().Subscribe([]interface{}{
+	sub, err := h.EventBus().Subscribe([]any{
 		new(event.EvtLocalAddressesUpdated),
 		new(event.EvtLocalReachabilityChanged),
 	})
