@@ -19,7 +19,7 @@ func TestWriteReadKeys(t *testing.T) {
 	filename := "test_keys.db"
 
 	keysTrie := trie.New[bit256.Key, crypto.PrivKey]()
-	for i := 0; i < nKeys; i++ {
+	for range nKeys {
 		priv, _, err := crypto.GenerateEd25519Key(rand.Reader)
 		require.NoError(t, err)
 		pid, err := peer.IDFromPrivateKey(priv)
@@ -45,7 +45,7 @@ func TestWriteReadKeys(t *testing.T) {
 
 func genPrefixesForDepth(depth int) []bitstr.Key {
 	prefixes := []string{""}
-	for i := 0; i < depth; i++ {
+	for range depth {
 		newPrefixes := []string{}
 		for _, prefix := range prefixes {
 			newPrefixes = append(newPrefixes, prefix+"0", prefix+"1")
