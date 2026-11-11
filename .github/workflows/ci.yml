@@ -1,0 +1,113 @@
+# CI for ants-watch: checks every pull request, builds the image of every
+# merge (and of a pull request with the label "push-image") as
+# ants-sha<commit>, and deploys a merge whose pull request has the label
+# "deploy" to both ECS services, celestia and agntcy. A person starts this
+# workflow by hand, or runs `just deploy <commit>`, to check and build any
+# commit, and with the flag "deploy" to deploy it without the label.
+# "skip-checks" leaves out lint, build and tests.
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: The commit to deploy. Empty means the newest on main.
+        type: string
+        required: false
+      skip-checks:
+        description: Skip the Lint, Build & Test Steps
+        type: boolean
+        default: false
+      deploy:
+        description: Deploy to ECS.
+        type: boolean
+        default: false
+
+# A new push to a pull request cancels its running checks.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, Build & Test
+    # Runs unless the pull request is a draft, the button ticked skip-checks, or
+    # the run comes from a label other than push-image.
+    if: >-
+      github.event.pull_request.draft != true && !inputs.skip-checks &&
+      (github.event.action != 'labeled' || github.event.label.name == 'push-image')
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    steps:
+      - name: Checking out the Code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+
+      - name: Setting up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}
+
+      - name: Setting up just
+        uses: extractions/setup-just@v4
+
+      - name: Linting the Code
+        run: just lint
+
+      - name: Building the Binary
+        run: just build
+
+      - name: Running the Tests
+        run: just test
+
+  image:
+    name: Container Image
+    needs: check
+    # Doesn't run for a draft PR. Runs when no check failed, also when the checks were skipped.
+    if: github.event.pull_request.draft != true && !failure() && !cancelled()
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: read
+    uses: probe-lab/.github/.github/workflows/image.yml@main
+    with:
+      # probelab-infra pins the image tag ants-sha<commit>.
+      service: ants
+      commit: ${{ inputs.commit }}
+
+  deploy:
+    name: Deployment
+    needs: image
+    # A pull request never deploys: the deploy flag is empty and image.yml
+    # reports no label. A merge deploys when its pull request had the label
+    # "deploy", and the button deploys with the deploy flag. !cancelled() keeps
+    # a skipped check job upstream from skipping this job too, and the image
+    # result keeps a failed image from being deployed.
+    if: >-
+      !cancelled() && needs.image.result == 'success' &&
+      (inputs.deploy || needs.image.outputs.deploy)
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [celestia, agntcy]
+    permissions:
+      contents: read
+      id-token: write
+    uses: probe-lab/.github/.github/workflows/deploy-ecs.yml@main
+    with:
+      service: ants
+      commit: ${{ inputs.commit || github.sha }}
+      # The names of tf/modules/ants in probelab-infra.
+      cluster: prod-use1-cmi-ecs-cluster
+      ecs-service: prod-use1-cmi-ants-${{ matrix.project }}-watch
+      task-definition: prod-use1-cmi-ants-${{ matrix.project }}-watch-task
+      container: prod-use1-cmi-ants-${{ matrix.project }}-watch

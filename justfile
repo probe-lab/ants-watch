@@ -36,6 +36,10 @@ format:
 # Run everything CI runs
 ci: lint build test
 
+# Check, build and deploy a commit (default: newest on main) to both ECS services
+deploy commit="" skip-checks="false":
+    gh workflow run ci.yml -f commit={{ commit }} -f deploy=true -f skip-checks={{ skip-checks }}
+
 # Build the linux/amd64 image with the tag CI uses
 docker:
     docker build --platform linux/amd64 -t "{{ image }}" .
